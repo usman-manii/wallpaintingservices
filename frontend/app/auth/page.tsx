@@ -1,0 +1,286 @@
+// frontend/app/auth/page.tsx
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { fetchAPI } from '@/lib/api';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Lock, Mail, User } from 'lucide-react';
+import { Captcha } from '@/components/auth/Captcha';
+
+type Mode = 'login' | 'signup';
+
+export default function AuthPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [captchaData, setCaptchaData] = useState<{ token: string; captchaId?: string; type?: string } | null>(null);
+  const [captchaVerified, setCaptchaVerified] = useState(false);
+  const [captchaKey, setCaptchaKey] = useState(0);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const captchaRequired = process.env.NODE_ENV === 'production';
+
+  const resetCaptcha = () => {
+    setCaptchaVerified(false);
+    setCaptchaData(null);
+    setCaptchaKey(prev => prev + 1);
+  };
+
+  const handleCaptchaVerify = (token: string, captchaId?: string, type?: string) => {
+    const isVerified = !!token;
+    setCaptchaVerified(isVerified);
+    if (isVerified) {
+      setCaptchaData({ token, captchaId, type });
+    } else {
+      setCaptchaData(null);
+    }
+  };
+
+  const switchMode = () => {
+    setMode(mode === 'login' ? 'signup' : 'login');
+    setError('');
+    resetCaptcha();
+  };
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    
+    if (captchaRequired && !captchaData?.token) {
+      setError('Please complete the security check');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const captchaPayload = captchaData?.token
+        ? {
+            captchaToken: captchaData.token,
+            captchaId: captchaData.captchaId,
+            captchaType: captchaData.type,
+          }
+        : {};
+
+      const data = await fetchAPI('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          ...captchaPayload,
+        }),
+      });
+
+      if (data?.user?.role) {
+        localStorage.setItem('user_role', data.user.role);
+      }
+      router.push('/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Invalid email or password');
+      resetCaptcha();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    
+    if (captchaRequired && !captchaData?.token) {
+      setError('Please complete the security check');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const captchaPayload = captchaData?.token
+        ? {
+            captchaToken: captchaData.token,
+            captchaId: captchaData.captchaId,
+            captchaType: captchaData.type,
+          }
+        : {};
+
+      const data = await fetchAPI('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          username,
+          firstName,
+          lastName,
+          name: `${firstName} ${lastName}`.trim(),
+          ...captchaPayload,
+        }),
+      });
+
+      if (data?.user?.role) {
+        localStorage.setItem('user_role', data.user.role);
+      }
+      router.push('/dashboard');
+    } catch (err: any) {
+      const errorMsg = err.message || 'Registration failed';
+      if (errorMsg.includes('already exists') || errorMsg.includes('duplicate') || errorMsg.includes('unique')) {
+        setError('An account with this email or username already exists.');
+      } else {
+        setError(errorMsg);
+      }
+      resetCaptcha();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleSubmit = mode === 'login' ? handleLogin : handleRegister;
+
+  return (
+    <div className="flex bg-slate-50 min-h-[80vh] items-center justify-center py-8">
+      <div className="w-full max-w-md mx-auto px-4">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-slate-900">
+            {mode === 'login' ? 'Welcome Back' : 'Create Account'}
+          </h1>
+          <p className="text-slate-500 mt-2">
+            {mode === 'login' 
+              ? 'Sign in to manage your content' 
+              : 'Join us to start managing your content'}
+          </p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-center text-xl">
+              {mode === 'login' ? 'Sign In' : 'Sign Up'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {error && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded text-sm">
+                {error}
+              </div>
+            )}
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {mode === 'signup' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="relative">
+                      <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                      <Input
+                        type="text"
+                        placeholder="First name"
+                        className="pl-10"
+                        required
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                      />
+                    </div>
+                    <div className="relative">
+                      <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                      <Input
+                        type="text"
+                        placeholder="Last name"
+                        className="pl-10"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="relative">
+                    <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                    <Input
+                      type="text"
+                      placeholder="Username"
+                      className="pl-10"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+              
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Input
+                  type="email"
+                  placeholder="name@example.com"
+                  className="pl-10"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  className="pl-10"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              
+              <div className="py-2">
+                <Captcha 
+                  key={captchaKey}
+                  onVerify={handleCaptchaVerify}
+                />
+              </div>
+
+              <Button type="submit" className="w-full" isLoading={loading}>
+                {mode === 'login' ? 'Sign In' : 'Create Account'}
+              </Button>
+            </form>
+
+            <div className="mt-4 text-center text-sm text-slate-600">
+              {mode === 'login' ? (
+                <p>
+                  Don't have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={switchMode}
+                    className="text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Sign up
+                  </button>
+                </p>
+              ) : (
+                <p>
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={switchMode}
+                    className="text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Sign in
+                  </button>
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

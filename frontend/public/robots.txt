@@ -1,0 +1,45 @@
+# robots.txt for Wall Painting Services
+# https://www.robotstxt.org/
+
+User-agent: *
+Allow: /
+Allow: /blog
+Allow: /blog/*
+Allow: /contact
+Allow: /sitemap.xml
+Allow: /sitemap-blog.xml
+Allow: /sitemap-index.xml
+
+# Disallow admin and auth pages
+Disallow: /dashboard
+Disallow: /dashboard/*
+Disallow: /login
+Disallow: /auth
+Disallow: /api/*
+
+# Disallow Next.js internal routes
+Disallow: /_next/*
+Disallow: /static/*
+
+# Allow crawling of static assets
+Allow: /*.js
+Allow: /*.css
+Allow: /*.jpg
+Allow: /*.jpeg
+Allow: /*.png
+Allow: /*.gif
+Allow: /*.svg
+Allow: /*.webp
+
+# Crawl-delay for specific bots (optional)
+User-agent: Googlebot
+Crawl-delay: 0
+
+User-agent: Bingbot
+Crawl-delay: 1
+
+# Sitemap location (use environment-specific URLs in production)
+# SECURITY FIX: In production, replace with actual domain
+Sitemap: https://yourdomain.com/sitemap-index.xml
+Sitemap: https://yourdomain.com/sitemap.xml
+Sitemap: https://yourdomain.com/sitemap-blog.xml

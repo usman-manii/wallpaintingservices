@@ -1,0 +1,634 @@
+// backend/src/blog/enhanced-blog.service.ts
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { Prisma, PostStatus } from '@prisma/client';
+
+@Injectable()
+export class EnhancedBlogService {
+  constructor(private prisma: PrismaService) {}
+
+  // =========== AUTO-TAGGING SYSTEM ===========
+  /**
+   * Automatically generate tags from post content using keyword extraction
+   * Extracts meaningful keywords and creates/assigns tags
+   */
+  async autoGenerateTags(content: string, title: string): Promise<string[]> {
+    // Remove HTML tags and get plain text
+    const plainText = content.replace(/<[^>]*>/g, ' ').toLowerCase();
+    const titleWords = title.toLowerCase().split(/\s+/);
+    
+    // Common stop words to exclude
+    const stopWords = new Set(['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'a', 'an']);
+    
+    // Extract words (2+ characters)
+    const words = plainText.match(/\b[a-z]{2,}\b/g) || [];
+    
+    // Count word frequency
+    const frequency: { [key: string]: number } = {};
+    words.forEach(word => {
+      if (!stopWords.has(word)) {
+        frequency[word] = (frequency[word] || 0) + 1;
+      }
+    });
+    
+    // Boost title words
+    titleWords.forEach(word => {
+      if (frequency[word]) {
+        frequency[word] *= 3; // 3x weight for title words
+      }
+    });
+    
+    // Sort by frequency and take top keywords
+    const topKeywords = Object.entries(frequency)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([word]) => word);
+    
+    // Create/find tags for these keywords
+    const autoTags: string[] = [];
+    for (const keyword of topKeywords) {
+      const slug = keyword.toLowerCase().replace(/\s+/g, '-');
+      
+      // Check if tag exists, otherwise create it
+      const tag = await this.prisma.tag.upsert({
+        where: { slug },
+        update: { usageCount: { increment: 1 } },
+        create: {
+          slug,
+          name: keyword.charAt(0).toUpperCase() + keyword.slice(1),
+          description: `Auto-generated tag for ${keyword}`,
+        },
+      });
+      
+      autoTags.push(tag.id);
+    }
+    
+    return autoTags;
+  }
+
+  // =========== AUTO-INTERLINKING SYSTEM ===========
+  /**
+   * Automatically creates internal links to related posts
+   * Scans content for keywords matching other posts' titles/slugs
+   */
+  async autoGenerateInterlinks(postId: string, content: string, title: string) {
+    // Find all published posts except current one
+    const otherPosts = await this.prisma.post.findMany({
+      where: {
+        id: { not: postId },
+        status: PostStatus.PUBLISHED,
+      },
+      select: { id: true, title: true, slug: true, seoKeywords: true },
+    });
+    
+    const interlinks: Array<{ targetUrl: string; anchorText: string; context: string }> = [];
+    
+    // Create a map of keywords to posts
+    for (const post of otherPosts) {
+      // Check if post title appears in content (case-insensitive)
+      const titlePattern = new RegExp(`\\b${post.title}\\b`, 'gi');
+      const matches = content.match(titlePattern);
+      
+      if (matches && matches.length > 0) {
+        // Find context around the match
+        const contextMatch = content.match(new RegExp(`(.{50})${post.title}(.{50})`, 'i'));
+        const context = contextMatch ? contextMatch[0] : '';
+        
+        interlinks.push({
+          targetUrl: `/blog/${post.slug}`,
+          anchorText: post.title,
+          context,
+        });
+      }
+      
+      // Also check SEO keywords
+      if (post.seoKeywords && post.seoKeywords.length > 0) {
+        post.seoKeywords.forEach(keyword => {
+          const keywordPattern = new RegExp(`\\b${keyword}\\b`, 'gi');
+          if (keywordPattern.test(content)) {
+            const contextMatch = content.match(new RegExp(`(.{30})${keyword}(.{30})`, 'i'));
+            interlinks.push({
+              targetUrl: `/blog/${post.slug}`,
+              anchorText: keyword,
+              context: contextMatch ? contextMatch[0] : '',
+            });
+          }
+        });
+      }
+    }
+    
+    // Remove duplicates
+    const uniqueInterlinks = interlinks.filter((link, index, self) =>
+      index === self.findIndex((t) => t.targetUrl === link.targetUrl)
+    );
+    
+    // Store internal links
+    await this.prisma.internalLink.deleteMany({ where: { sourcePostId: postId } });
+    
+    for (const link of uniqueInterlinks.slice(0, 10)) { // Limit to 10 links
+      await this.prisma.internalLink.create({
+        data: {
+          sourcePostId: postId,
+          targetUrl: link.targetUrl,
+          anchorText: link.anchorText,
+          context: link.context,
+          autoGenerated: true,
+        },
+      });
+    }
+    
+    return uniqueInterlinks;
+  }
+
+  // =========== RELATED POSTS ALGORITHM ===========
+  /**
+   * Find related posts based on shared tags, categories, and content similarity
+   */
+  async findRelatedPosts(postId: string, limit: number = 5): Promise<string[]> {
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      include: { tags: true, categories: true },
+    });
+    
+    if (!post) return [];
+    
+    const tagIds = post.tags.map(t => t.id);
+    const categoryIds = post.categories.map(c => c.id);
+    
+    // Find posts with overlapping tags/categories
+    const relatedPosts = await this.prisma.post.findMany({
+      where: {
+        id: { not: postId },
+        status: PostStatus.PUBLISHED,
+        OR: [
+          { tags: { some: { id: { in: tagIds } } } },
+          { categories: { some: { id: { in: categoryIds } } } },
+        ],
+      },
+      include: { tags: true, categories: true },
+      take: limit * 2, // Get more than needed for scoring
+    });
+    
+    // Score posts by relevance
+    const scored = relatedPosts.map(relatedPost => {
+      let score = 0;
+      
+      // Shared tags (higher weight)
+      const sharedTags = relatedPost.tags.filter(t => tagIds.includes(t.id)).length;
+      score += sharedTags * 3;
+      
+      // Shared categories
+      const sharedCategories = relatedPost.categories.filter(c => categoryIds.includes(c.id)).length;
+      score += sharedCategories * 2;
+      
+      // Recency bonus (newer posts get slight boost)
+      const daysSincePublished = (Date.now() - new Date(relatedPost.publishedAt || relatedPost.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+      score += Math.max(0, 10 - daysSincePublished / 30); // Boost for posts < 30 days old
+      
+      return { postId: relatedPost.id, score };
+    });
+    
+    // Sort by score and return top N
+    return scored
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(item => item.postId);
+  }
+
+  // =========== READING TIME CALCULATION ===========
+  /**
+   * Calculate estimated reading time in minutes
+   */
+  calculateReadingTime(content: string): number {
+    const wordsPerMinute = 200;
+    const plainText = content.replace(/<[^>]*>/g, ' ');
+    const wordCount = plainText.split(/\s+/).filter(word => word.length > 0).length;
+    return Math.ceil(wordCount / wordsPerMinute);
+  }
+
+  // =========== SEO AUTO-GENERATION ===========
+  /**
+   * Generate SEO metadata from content if not provided
+   */
+  async generateSEO(title: string, content: string, existingSEO?: { seoTitle?: string; seoDescription?: string; seoKeywords?: string[] }) {
+    const plainText = content.replace(/<[^>]*>/g, ' ').trim();
+    
+    return {
+      seoTitle: existingSEO?.seoTitle || title.substring(0, 60),
+      seoDescription: existingSEO?.seoDescription || plainText.substring(0, 155) + '...',
+      seoKeywords: existingSEO?.seoKeywords || await this.extractKeywords(title, plainText, 10),
+      ogTitle: title.substring(0, 60),
+      ogDescription: plainText.substring(0, 200) + '...',
+    };
+  }
+
+  private async extractKeywords(title: string, content: string, limit: number): Promise<string[]> {
+    const combined = `${title} ${content}`.toLowerCase();
+    const words = combined.match(/\b[a-z]{4,}\b/g) || [];
+    
+    const stopWords = new Set(['this', 'that', 'with', 'from', 'have', 'more', 'will', 'about', 'which', 'when', 'where', 'their', 'there', 'these', 'those', 'what', 'your', 'into', 'than', 'them', 'then', 'some', 'would', 'could', 'other']);
+    
+    const frequency: { [key: string]: number } = {};
+    words.forEach(word => {
+      if (!stopWords.has(word)) {
+        frequency[word] = (frequency[word] || 0) + 1;
+      }
+    });
+    
+    return Object.entries(frequency)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, limit)
+      .map(([word]) => word);
+  }
+
+  // =========== CREATE POST WITH AUTO-FEATURES ===========
+  /**
+   * Create a post with automatic tag generation, interlinking, and SEO
+   */
+  async createEnhancedPost(data: {
+    title: string;
+    content: string;
+    excerpt?: string;
+    slug: string;
+    authorId: string;
+    status?: PostStatus;
+    featuredImage?: string;
+    categoryIds?: string[];
+    tagIds?: string[];
+    scheduledFor?: Date;
+    aiGenerated?: boolean;
+  }) {
+    // Generate auto-tags from content
+    const autoTagIds = await this.autoGenerateTags(data.content, data.title);
+    
+    // Merge manual tags with auto-generated ones
+    const allTagIds = [...new Set([...(data.tagIds || []), ...autoTagIds])];
+    
+    // Calculate reading time
+    const readingTime = this.calculateReadingTime(data.content);
+    
+    // Generate SEO metadata
+    const seoData = await this.generateSEO(data.title, data.content);
+    
+    // Extract excerpt if not provided
+    const plainText = data.content.replace(/<[^>]*>/g, ' ').trim();
+    const excerpt = data.excerpt || plainText.substring(0, 160) + '...';
+    
+    // Determine published date
+    const now = new Date();
+    const publishedAt = data.status === PostStatus.PUBLISHED ? now : null;
+    
+    // Create post
+    const post = await this.prisma.post.create({
+      data: {
+        title: data.title,
+        slug: data.slug,
+        content: data.content,
+        excerpt,
+        featuredImage: data.featuredImage,
+        status: data.status || PostStatus.DRAFT,
+        publishedAt,
+        scheduledFor: data.scheduledFor,
+        readingTime,
+        aiGenerated: data.aiGenerated || false,
+        autoTags: autoTagIds,
+        ...seoData,
+        author: { connect: { id: data.authorId } },
+        categories: data.categoryIds ? { connect: data.categoryIds.map(id => ({ id })) } : undefined,
+        tags: allTagIds.length > 0 ? { connect: allTagIds.map(id => ({ id })) } : undefined,
+      },
+      include: { tags: true, categories: true, author: true },
+    });
+    
+    // Generate interlinks (async, don't wait)
+    this.autoGenerateInterlinks(post.id, data.content, data.title);
+    
+    // Find and store related posts
+    const relatedPostIds = await this.findRelatedPosts(post.id);
+    await this.prisma.post.update({
+      where: { id: post.id },
+      data: { relatedPostIds },
+    });
+    
+    return post;
+  }
+
+  // =========== UPDATE POST WITH AUTO-FEATURES ===========
+  async updateEnhancedPost(id: string, data: any) {
+    const existingPost = await this.prisma.post.findUnique({ where: { id } });
+    
+    if (!existingPost) {
+      throw new Error('Post not found');
+    }
+    
+    // If content or title changed, regenerate auto-features
+    if (data.content || data.title) {
+      const content = (data.content as string) || existingPost.content;
+      const title = (data.title as string) || existingPost.title;
+      
+      // Regenerate auto-tags
+      const autoTagIds = await this.autoGenerateTags(content, title);
+      
+      // Recalculate reading time
+      const readingTime = this.calculateReadingTime(content);
+      
+      // Regenerate interlinks
+      await this.autoGenerateInterlinks(id, content, title);
+      
+      // Update related posts
+      const relatedPostIds = await this.findRelatedPosts(id);
+      
+      data = {
+        ...data,
+        autoTags: autoTagIds,
+        readingTime,
+        relatedPostIds,
+      };
+    }
+    
+    return this.prisma.post.update({
+      where: { id },
+      data,
+      include: { tags: true, categories: true, author: true },
+    });
+  }
+
+  // =========== SCHEDULED PUBLISHING ===========
+  /**
+   * Process scheduled posts and publish them
+   */
+  async processScheduledPosts() {
+    const now = new Date();
+    
+    const scheduledPosts = await this.prisma.post.findMany({
+      where: {
+        status: PostStatus.SCHEDULED,
+        scheduledFor: { lte: now },
+      },
+    });
+    
+    for (const post of scheduledPosts) {
+      await this.prisma.post.update({
+        where: { id: post.id },
+        data: {
+          status: PostStatus.PUBLISHED,
+          publishedAt: now,
+        },
+      });
+    }
+    
+    return scheduledPosts.length;
+  }
+
+  // =========== TRENDING TAGS ===========
+  /**
+   * Update trending tags based on recent usage
+   */
+  async updateTrendingTags() {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    
+    // Get tags used in posts from last 30 days
+    const recentPosts = await this.prisma.post.findMany({
+      where: {
+        status: PostStatus.PUBLISHED,
+        publishedAt: { gte: thirtyDaysAgo },
+      },
+      include: { tags: true },
+    });
+    
+    // Count tag usage
+    const tagUsage: { [id: string]: number } = {};
+    recentPosts.forEach(post => {
+      post.tags.forEach(tag => {
+        tagUsage[tag.id] = (tagUsage[tag.id] || 0) + 1;
+      });
+    });
+    
+    // Get top 10 trending tags
+    const trendingTagIds = Object.entries(tagUsage)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([id]) => id);
+    
+    // Update all tags
+    await this.prisma.tag.updateMany({
+      where: {},
+      data: { trending: false },
+    });
+    
+    // Mark trending tags
+    await this.prisma.tag.updateMany({
+      where: { id: { in: trendingTagIds } },
+      data: { trending: true },
+    });
+    
+    return trendingTagIds.length;
+  }
+
+  /**
+   * Get scheduled posts
+   */
+  async getScheduledPosts() {
+    return this.prisma.post.findMany({
+      where: {
+        OR: [
+          {
+            status: PostStatus.SCHEDULED,
+            scheduledFor: { not: null },
+          },
+          {
+            status: PostStatus.DRAFT,
+            scheduledFor: { not: null },
+          },
+        ],
+      },
+      include: {
+        author: { select: { username: true, displayName: true } },
+        categories: true,
+        tags: true,
+      },
+      orderBy: { scheduledFor: 'asc' },
+    });
+  }
+
+  /**
+   * Increment view count
+   */
+  async incrementViewCount(postId: string) {
+    return this.prisma.post.update({
+      where: { id: postId },
+      data: {
+        viewCount: { increment: 1 },
+      },
+    });
+  }
+
+  /**
+   * Get trending tags (public)
+   */
+  async getTrendingTags() {
+    return this.prisma.tag.findMany({
+      where: { trending: true },
+      orderBy: { usageCount: 'desc' },
+      take: 10,
+    });
+  }
+
+  /**
+   * Public list of categories for sitemap/navigation
+   */
+  async getPublicCategories() {
+    return this.prisma.category.findMany({
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        updatedAt: true,
+        createdAt: true,
+        featured: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /**
+   * Public list of tags (lightweight)
+   */
+  async getPublicTags() {
+    return this.prisma.tag.findMany({
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        updatedAt: true,
+        createdAt: true,
+        trending: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /**
+   * Get all tags (admin)
+   */
+  async getAllTags(options: { skip?: number; take?: number } = {}) {
+    return this.prisma.tag.findMany({
+      include: {
+        parent: true,
+        children: true,
+        posts: { select: { id: true } },
+      },
+      orderBy: { usageCount: 'desc' },
+      skip: options.skip || 0,
+      take: options.take || 50,
+    });
+  }
+
+  /**
+   * Create tag
+   */
+  async createTag(data: {
+    name: string;
+    slug: string;
+    description?: string;
+    color?: string;
+    icon?: string;
+    parentId?: string;
+  }) {
+    return this.prisma.tag.create({
+      data: {
+        name: data.name,
+        slug: data.slug,
+        description: data.description,
+        color: data.color,
+        icon: data.icon,
+        parent: data.parentId ? { connect: { id: data.parentId } } : undefined,
+      },
+      include: {
+        parent: true,
+        children: true,
+      },
+    });
+  }
+
+  /**
+   * Update tag
+   */
+  async updateTag(id: string, data: any) {
+    return this.prisma.tag.update({
+      where: { id },
+      data,
+      include: {
+        parent: true,
+        children: true,
+      },
+    });
+  }
+
+  /**
+   * Delete tag
+   */
+  async deleteTag(id: string) {
+    // First disconnect all posts
+    await this.prisma.tag.update({
+      where: { id },
+      data: {
+        posts: { set: [] },
+      },
+    });
+    
+    // Then delete the tag
+    return this.prisma.tag.delete({
+      where: { id },
+    });
+  }
+
+  /**
+   * Merge multiple tags into one target tag
+   */
+  async mergeTags(sourceIds: string[], targetId: string) {
+    // Get all posts with source tags
+    const sourceTags = await this.prisma.tag.findMany({
+      where: { id: { in: sourceIds } },
+      include: { posts: true },
+    });
+    
+    // Get target tag
+    const targetTag = await this.prisma.tag.findUnique({
+      where: { id: targetId },
+      include: { posts: true },
+    });
+    
+    if (!targetTag) {
+      throw new Error('Target tag not found');
+    }
+    
+    // Collect all unique post IDs
+    const allPostIds = new Set<string>();
+    sourceTags.forEach(tag => {
+      tag.posts.forEach(post => allPostIds.add(post.id));
+    });
+    targetTag.posts.forEach(post => allPostIds.add(post.id));
+    
+    // Connect target tag to all posts
+    await this.prisma.tag.update({
+      where: { id: targetId },
+      data: {
+        posts: {
+          set: Array.from(allPostIds).map(id => ({ id })),
+        },
+        usageCount: allPostIds.size,
+      },
+    });
+    
+    // Delete source tags
+    await this.prisma.tag.deleteMany({
+      where: { id: { in: sourceIds } },
+    });
+    
+    return this.prisma.tag.findUnique({
+      where: { id: targetId },
+      include: { posts: true },
+    });
+  }
+}
