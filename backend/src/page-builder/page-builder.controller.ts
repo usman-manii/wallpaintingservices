@@ -66,13 +66,10 @@ export class PageBuilderController {
         authorId: finalAuthorId 
       });
       
-      this.logger.log(`✅ Returning ${pages.length} pages from database`);
+      this.logger.log(`✅ Returning ${pages.pages?.length || 0} pages from database`);
       
-      // Ensure we always return an array, even if empty
-      if (!Array.isArray(pages)) {
-        this.logger.error('❌ Pages query did not return an array:', pages);
-        return [];
-      }
+      // Return the full paginated response
+      return pages;
       
       return pages;
     } catch (error) {

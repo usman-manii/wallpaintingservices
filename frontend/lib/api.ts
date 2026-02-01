@@ -65,104 +65,103 @@ export async function fetchAPI(endpoint: string, options: RequestWithRetry = {})
   const requestKey = method === 'GET' ? createRequestKey(endpoint, options) : null;
   
   const fetchPromise = (async () => {
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+    // Ensure endpoint starts with /
+    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  
+    // Respect FormData bodies (do not set Content-Type so browser can set boundary)
+    const isFormDataBody = options && (options as any).body instanceof FormData;
+    const headers: Record<string,string> = {
+      ...(isFormDataBody ? {} : { 'Content-Type': 'application/json' }),
+      ...((options.headers as Record<string,string>) || {}),
+      ...(typeof window !== 'undefined'
+        ? { 'x-csrf-token': document.cookie.split('; ').find(c => c.startsWith('csrf-token='))?.split('=')[1] || '' }
+        : {}),
+    };
+
+    let res: Response;
     try {
-      // Create abort controller for timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
-  // Ensure endpoint starts with /
-  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  
-  // Respect FormData bodies (do not set Content-Type so browser can set boundary)
-  const isFormDataBody = options && (options as any).body instanceof FormData;
-  const headers: Record<string,string> = {
-    ...(isFormDataBody ? {} : { 'Content-Type': 'application/json' }),
-    ...((options.headers as Record<string,string>) || {}),
-    ...(typeof window !== 'undefined'
-      ? { 'x-csrf-token': document.cookie.split('; ').find(c => c.startsWith('csrf-token='))?.split('=')[1] || '' }
-      : {}),
-  };
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_URL}${normalizedEndpoint}`, {
-      ...options,
-      headers,
-      signal: controller.signal,
-      cache: options.cache ?? 'no-store',
-      // Ensure Next.js server-side fetches don't cache either
-      next: { revalidate: 0, ...(options as any).next },
-      credentials: 'include', // SECURITY FIX: Send httpOnly cookies
-    });
-    clearTimeout(timeoutId);
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      throw new Error(`Request timeout after ${timeout / 1000} seconds`);
+      res = await fetch(`${API_URL}${normalizedEndpoint}`, {
+        ...options,
+        headers,
+        signal: controller.signal,
+        cache: options.cache ?? 'no-store',
+        // Ensure Next.js server-side fetches don't cache either
+        next: { revalidate: 0, ...(options as any).next },
+        credentials: 'include', // SECURITY FIX: Send httpOnly cookies
+      });
+      clearTimeout(timeoutId);
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        throw new Error(`Request timeout after ${timeout / 1000} seconds`);
+      }
+      throw new Error(`Network error: ${err?.message || 'Failed to fetch'}`);
     }
-    throw new Error(`Network error: ${err?.message || 'Failed to fetch'}`);
-  }
 
-  // Special handling for unauthorized responses in browser environments
-  if (res.status === 401 && typeof window !== 'undefined') {
-    const shouldRedirect = options.redirectOn401 === true;
-    // Attempt silent refresh once (but NOT for refresh/logout endpoints to prevent infinite loop)
-    const isAuthEndpoint = endpoint.includes('/auth/refresh') || endpoint.includes('/auth/logout');
-    
-    if (!options.__retried && !isAuthEndpoint) {
-      try {
-        const refreshRes = await fetch(`${API_URL}/auth/refresh`, {
-          method: 'POST',
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        if (refreshRes.ok) {
-          // Mark as retried to prevent infinite loops
-          return fetchAPI(endpoint, { ...options, __retried: true });
+    // Special handling for unauthorized responses in browser environments
+    if (res.status === 401 && typeof window !== 'undefined') {
+      const shouldRedirect = options.redirectOn401 === true;
+      // Attempt silent refresh once (but NOT for refresh/logout endpoints to prevent infinite loop)
+      const isAuthEndpoint = endpoint.includes('/auth/refresh') || endpoint.includes('/auth/logout');
+      
+      if (!options.__retried && !isAuthEndpoint) {
+        try {
+          const refreshRes = await fetch(`${API_URL}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include',
+            cache: 'no-store',
+          });
+          if (refreshRes.ok) {
+            // Mark as retried to prevent infinite loops
+            return fetchAPI(endpoint, { ...options, __retried: true });
+          }
+        } catch (_) {
+          // ignore refresh errors and fall through to redirect/error
         }
-      } catch (_) {
-        // ignore refresh errors and fall through to redirect/error
+      }
+      
+      // Only redirect if explicitly requested AND refresh failed
+      if (shouldRedirect && (options.__retried || isAuthEndpoint)) {
+        try {
+          await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
+        } catch (_) {}
+        
+        // Use setTimeout to avoid race conditions with state updates
+        setTimeout(() => {
+          window.location.replace('/auth');
+        }, 100);
+        return; // Prevent throwing error after redirect
+      }
+      
+      const err = await res.json().catch(() => ({ message: 'Unauthorized' }));
+      throw new Error(err.message || 'Unauthorized');
+    }
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(error.message || `API Error: ${res.statusText}`);
+    }
+
+    try {
+      // Some endpoints legitimately return no content (e.g. 204 or empty body).
+      // In those cases, avoid throwing a JSON parse error and just return null.
+      const data = await res.json();
+      return data;
+    } catch (err: any) {
+      if (err instanceof SyntaxError || err?.name === 'Syntax Error') {
+        return null;
+      }
+      throw err;
+    } finally {
+      // Clean up deduplication map
+      if (requestKey) {
+        pendingRequests.delete(requestKey);
       }
     }
-    
-    // Only redirect if explicitly requested AND refresh failed
-    if (shouldRedirect && (options.__retried || isAuthEndpoint)) {
-      try {
-        await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
-      } catch (_) {}
-      
-      // Use setTimeout to avoid race conditions with state updates
-      setTimeout(() => {
-        window.location.replace('/auth');
-      }, 100);
-      return; // Prevent throwing error after redirect
-    }
-    
-    const err = await res.json().catch(() => ({ message: 'Unauthorized' }));
-    throw new Error(err.message || 'Unauthorized');
-  }
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(error.message || `API Error: ${res.statusText}`);
-  }
-
-  try {
-    // Some endpoints legitimately return no content (e.g. 204 or empty body).
-    // In those cases, avoid throwing a JSON parse error and just return null.
-    const data = await res.json();
-    return data;
-  } catch (err: any) {
-    if (err instanceof SyntaxError || err?.name === 'SyntaxError') {
-      return null;
-    }
-    throw err;
-  } finally {
-    // Clean up deduplication map
-    if (requestKey) {
-      pendingRequests.delete(requestKey);
-    }
-  }
   })();
   
   // Store promise for GET requests to enable deduplication
