@@ -44,22 +44,43 @@ export class EnhancedBlogService {
       .slice(0, 10)
       .map(([word]) => word);
     
-    // Create/find tags for these keywords
+    // Create/find tags for these keywords with synonym resolution
     const autoTags: string[] = [];
     for (const keyword of topKeywords) {
-      const slug = keyword.toLowerCase().replace(/\s+/g, '-');
-      
-      // Check if tag exists, otherwise create it
-      const tag = await this.prisma.tag.upsert({
-        where: { slug },
-        update: { usageCount: { increment: 1 } },
-        create: {
-          slug,
-          name: keyword.charAt(0).toUpperCase() + keyword.slice(1),
-          description: `Auto-generated tag for ${keyword}`,
+      const normalized = keyword.toLowerCase();
+      const slug = normalized.replace(/\s+/g, '-');
+
+      // Try match by slug/name first
+      let tag = await this.prisma.tag.findFirst({
+        where: {
+          OR: [
+            { slug },
+            { name: { equals: keyword, mode: 'insensitive' } },
+            { synonyms: { has: normalized } },
+          ],
         },
       });
-      
+
+      if (tag) {
+        // Increment usage and synonym hits if matched via synonym
+        await this.prisma.tag.update({
+          where: { id: tag.id },
+          data: {
+            usageCount: { increment: 1 },
+            synonymHits: tag.synonyms.includes(normalized) ? { increment: 1 } : undefined,
+          },
+        });
+      } else {
+        tag = await this.prisma.tag.create({
+          data: {
+            slug,
+            name: keyword.charAt(0).toUpperCase() + keyword.slice(1),
+            description: `Auto-generated tag for ${keyword}`,
+            usageCount: 1,
+          },
+        });
+      }
+
       autoTags.push(tag.id);
     }
     
@@ -262,7 +283,8 @@ export class EnhancedBlogService {
     const autoTagIds = await this.autoGenerateTags(data.content, data.title);
     
     // Merge manual tags with auto-generated ones
-    const allTagIds = [...new Set([...(data.tagIds || []), ...autoTagIds])];
+    let allTagIds = [...new Set([...(data.tagIds || []), ...autoTagIds])];
+    allTagIds = await this.expandLinkedTags(allTagIds);
     
     // Calculate reading time
     const readingTime = this.calculateReadingTime(data.content);
@@ -315,7 +337,7 @@ export class EnhancedBlogService {
 
   // =========== UPDATE POST WITH AUTO-FEATURES ===========
   async updateEnhancedPost(id: string, data: any) {
-    const existingPost = await this.prisma.post.findUnique({ where: { id } });
+    const existingPost = await this.prisma.post.findUnique({ where: { id }, include: { tags: true } });
     
     if (!existingPost) {
       throw new Error('Post not found');
@@ -338,11 +360,15 @@ export class EnhancedBlogService {
       // Update related posts
       const relatedPostIds = await this.findRelatedPosts(id);
       
+      let allTagIds = data.tagIds || existingPost.tags.map(t => t.id);
+      allTagIds = await this.expandLinkedTags(allTagIds);
+
       data = {
         ...data,
         autoTags: autoTagIds,
         readingTime,
         relatedPostIds,
+        tags: allTagIds.length > 0 ? { set: allTagIds.map(id => ({ id })) } : undefined,
       };
     }
     
@@ -475,6 +501,23 @@ export class EnhancedBlogService {
   }
 
   /**
+   * Expand tag list with any linked companion tags
+   */
+  private async expandLinkedTags(tagIds: string[]): Promise<string[]> {
+    if (!tagIds || tagIds.length === 0) return [];
+    const tags = await this.prisma.tag.findMany({
+      where: { id: { in: tagIds } },
+      select: { id: true, linkedTagIds: true },
+    });
+
+    const expanded = new Set<string>(tagIds);
+    tags.forEach(t => {
+      (t.linkedTagIds || []).forEach(linked => expanded.add(linked));
+    });
+    return Array.from(expanded);
+  }
+
+  /**
    * Public list of categories for sitemap/navigation
    */
   async getPublicCategories() {
@@ -503,6 +546,7 @@ export class EnhancedBlogService {
         updatedAt: true,
         createdAt: true,
         trending: true,
+        featured: true,
       },
       orderBy: { name: 'asc' },
     });
@@ -534,14 +578,38 @@ export class EnhancedBlogService {
     color?: string;
     icon?: string;
     parentId?: string;
+    featured?: boolean;
+    synonyms?: string[];
+    linkedTagIds?: string[];
+    locked?: boolean;
   }) {
+    const name = data.name.trim();
+    const slug = this.slugify(data.slug || data.name);
+
+    // Prevent duplicates by slug or name (case-insensitive)
+    const existing = await this.prisma.tag.findFirst({
+      where: {
+        OR: [
+          { slug },
+          { name: { equals: name, mode: 'insensitive' } },
+        ],
+      },
+    });
+    if (existing) {
+      throw new Error('Tag with the same name or slug already exists');
+    }
+
     return this.prisma.tag.create({
       data: {
-        name: data.name,
-        slug: data.slug,
+        name,
+        slug,
         description: data.description,
-        color: data.color,
+        color: data.color || '#3b82f6',
         icon: data.icon,
+        featured: data.featured ?? false,
+        synonyms: (data.synonyms || []).map(s => s.trim().toLowerCase()).filter(s => s.length > 0),
+        linkedTagIds: Array.from(new Set((data.linkedTagIds || []).filter(id => !!id))),
+        locked: data.locked ?? false,
         parent: data.parentId ? { connect: { id: data.parentId } } : undefined,
       },
       include: {
@@ -555,9 +623,60 @@ export class EnhancedBlogService {
    * Update tag
    */
   async updateTag(id: string, data: any) {
+    const updateData: any = { ...data };
+
+    // Protect locked tags
+    const existing = await this.prisma.tag.findUnique({ where: { id } });
+    if (!existing) {
+      throw new Error('Tag not found');
+    }
+    if (existing.locked && !data.forceUnlock) {
+      throw new Error('Tag is locked and cannot be modified');
+    }
+    delete updateData.forceUnlock;
+
+    if (data.name) {
+      updateData.name = data.name.trim();
+    }
+
+    if (Array.isArray(data.synonyms)) {
+      updateData.synonyms = data.synonyms
+        .map((s: string) => s.trim().toLowerCase())
+        .filter((s: string) => s.length > 0);
+    }
+
+    if (Array.isArray(data.linkedTagIds)) {
+      updateData.linkedTagIds = Array.from(new Set(data.linkedTagIds.filter((v: string) => !!v)));
+    }
+
+    if (data.slug || data.name) {
+      updateData.slug = this.slugify(data.slug || data.name || '');
+    }
+
+    // Prevent self-parenting
+    if (data.parentId && data.parentId === id) {
+      throw new Error('A tag cannot be its own parent');
+    }
+
+    // Prevent duplicates when changing name/slug
+    if (updateData.slug || updateData.name) {
+      const existing = await this.prisma.tag.findFirst({
+        where: {
+          id: { not: id },
+          OR: [
+            updateData.slug ? { slug: updateData.slug } : undefined,
+            updateData.name ? { name: { equals: updateData.name, mode: 'insensitive' } } : undefined,
+          ].filter(Boolean) as any,
+        },
+      });
+      if (existing) {
+        throw new Error('Another tag with the same name or slug already exists');
+      }
+    }
+
     return this.prisma.tag.update({
       where: { id },
-      data,
+      data: updateData,
       include: {
         parent: true,
         children: true,
@@ -569,6 +688,14 @@ export class EnhancedBlogService {
    * Delete tag
    */
   async deleteTag(id: string) {
+    const existing = await this.prisma.tag.findUnique({ where: { id } });
+    if (!existing) {
+      throw new Error('Tag not found');
+    }
+    if (existing.locked) {
+      throw new Error('Tag is locked and cannot be deleted');
+    }
+
     // First disconnect all posts
     await this.prisma.tag.update({
       where: { id },
@@ -618,6 +745,7 @@ export class EnhancedBlogService {
           set: Array.from(allPostIds).map(id => ({ id })),
         },
         usageCount: allPostIds.size,
+        mergeCount: { increment: sourceIds.length },
       },
     });
     
@@ -630,5 +758,159 @@ export class EnhancedBlogService {
       where: { id: targetId },
       include: { posts: true },
     });
+  }
+
+  async bulkSetParent(tagIds: string[], parentId: string | null) {
+    const targets = await this.prisma.tag.findMany({ where: { id: { in: tagIds } } });
+    const allowedIds = targets.filter(t => !t.locked && t.id !== parentId).map(t => t.id);
+    if (allowedIds.length === 0) return { updated: 0 };
+    const result = await this.prisma.tag.updateMany({
+      where: { id: { in: allowedIds } },
+      data: { parentId: parentId || null },
+    });
+    return { updated: result.count };
+  }
+
+  async bulkUpdateStyle(tagIds: string[], data: { color?: string; icon?: string; featured?: boolean }) {
+    const targets = await this.prisma.tag.findMany({ where: { id: { in: tagIds } } });
+    const allowedIds = targets.filter(t => !t.locked).map(t => t.id);
+    if (allowedIds.length === 0) return { updated: 0 };
+    const result = await this.prisma.tag.updateMany({
+      where: { id: { in: allowedIds } },
+      data,
+    });
+    return { updated: result.count };
+  }
+
+  async bulkLock(tagIds: string[], locked: boolean) {
+    const result = await this.prisma.tag.updateMany({
+      where: { id: { in: tagIds } },
+      data: { locked },
+    });
+    return { updated: result.count };
+  }
+
+  /**
+   * Convert tags into categories while keeping existing tag links
+   */
+  async convertTagsToCategories(tagIds: string[]) {
+    const tags = await this.prisma.tag.findMany({
+      where: { id: { in: tagIds } },
+      include: { posts: { select: { id: true } } },
+    });
+
+    const results: Array<{ tagId: string; categoryId: string }> = [];
+
+    for (const tag of tags) {
+      // Ensure category exists
+      let category = await this.prisma.category.findFirst({
+        where: {
+          OR: [
+            { slug: tag.slug },
+            { name: { equals: tag.name, mode: 'insensitive' } },
+          ],
+        },
+      });
+
+      if (!category) {
+        category = await this.prisma.category.create({
+          data: {
+            name: tag.name,
+            slug: tag.slug,
+            description: tag.description,
+            color: tag.color,
+            icon: tag.icon,
+            featured: tag.featured,
+          },
+        });
+      }
+
+      // Connect category to posts that had the tag
+      if (tag.posts.length > 0) {
+        for (const post of tag.posts) {
+          await this.prisma.post.update({
+            where: { id: post.id },
+            data: {
+              categories: { connect: { id: category.id } },
+            },
+          });
+        }
+      }
+
+      results.push({ tagId: tag.id, categoryId: category.id });
+    }
+
+    return results;
+  }
+
+  /**
+   * Detect potential duplicate tags by name similarity
+   */
+  async findDuplicateTags(threshold: number = 0.28) {
+    const tags = await this.prisma.tag.findMany({
+      select: { id: true, name: true, slug: true, usageCount: true },
+    });
+
+    const duplicates: Array<{ a: any; b: any; score: number }> = [];
+
+    for (let i = 0; i < tags.length; i++) {
+      for (let j = i + 1; j < tags.length; j++) {
+        const a = tags[i];
+        const b = tags[j];
+        const score = this.stringDistance(a.name, b.name);
+        if (score >= threshold) {
+          duplicates.push({ a, b, score: Number(score.toFixed(2)) });
+        }
+      }
+    }
+
+    return duplicates
+      .sort((x, y) => y.score - x.score)
+      .slice(0, 50);
+  }
+
+  /**
+   * Normalized similarity (1 - normalized Levenshtein)
+   */
+  private stringDistance(a: string, b: string): number {
+    const s = a.toLowerCase();
+    const t = b.toLowerCase();
+    if (s === t) return 1;
+    const len = Math.max(s.length, t.length);
+    const dist = this.levenshtein(s, t);
+    return 1 - dist / len;
+  }
+
+  private levenshtein(a: string, b: string): number {
+    const matrix: number[][] = [];
+    for (let i = 0; i <= b.length; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= a.length; j++) {
+      matrix[0][j] = j;
+    }
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        if (b.charAt(i - 1) === a.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1,
+          );
+        }
+      }
+    }
+    return matrix[b.length][a.length];
+  }
+
+  private slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .trim();
   }
 }

@@ -29,6 +29,7 @@ export default function SettingsPage() {
     description: '', 
     seoKeywords: '', 
     footerText: '',
+    homePageLayout: 'single',
     homePageId: '',
     blogPageId: '',
     topBarEnabled: false,
@@ -93,6 +94,7 @@ export default function SettingsPage() {
           description: data.description || '',
           seoKeywords: data.seoKeywords || '',
           footerText: data.footerText || '',
+          homePageLayout: data.homePageLayout || 'single',
           homePageId: data.homePageId || '',
           blogPageId: data.blogPageId || '',
           topBarEnabled: data.topBarEnabled || false,
@@ -120,7 +122,7 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   const loadVerificationFiles = useCallback(async () => {
     try {
@@ -137,7 +139,7 @@ export default function SettingsPage() {
     loadSettings();
     loadPages();
     loadVerificationFiles();
-  }, [router, loadSettings, loadPages, loadVerificationFiles]);
+  }, [loadSettings, loadPages, loadVerificationFiles]);
 
   async function handleSave() {
     setMessage('');
@@ -151,6 +153,7 @@ export default function SettingsPage() {
         logo: settings.logo || null,
         favicon: settings.favicon || null,
         topBarEnabled: settings.topBarEnabled,
+        homePageLayout: settings.homePageLayout || 'single',
         captchaType: settings.captchaType,
         recaptchaV2SiteKey: settings.recaptchaV2SiteKey || null,
         recaptchaV2SecretKey: settings.recaptchaV2SecretKey || null,
@@ -327,6 +330,27 @@ export default function SettingsPage() {
                       onChange={(e) => setSettings({...settings, footerText: e.target.value})} 
                       placeholder="© 2024 Wall Painting Services. All rights reserved."
                     />
+                 </div>
+
+                 <div className="grid gap-2">
+                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Blog Layout</label>
+                    <div className="flex gap-3">
+                      {['single', 'dual'].map((layout) => (
+                        <button
+                          key={layout}
+                          type="button"
+                          onClick={() => setSettings({ ...settings, homePageLayout: layout })}
+                          className={`px-3 py-2 rounded-lg border text-sm ${
+                            settings.homePageLayout === layout
+                              ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200'
+                              : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {layout === 'single' ? 'Single Column' : 'Dual Column'}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-400">Controls blog listing layout (and homepage when it shows the blog feed).</p>
                  </div>
             </CardContent>
       </Card>

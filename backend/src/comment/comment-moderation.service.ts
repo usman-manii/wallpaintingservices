@@ -60,6 +60,9 @@ export class CommentModerationService {
         parent: data.parentId ? { connect: { id: data.parentId } } : undefined,
         isApproved,
         isSpam,
+        upvotes: 0,
+        downvotes: 0,
+        reactions: {},
       },
       include: {
         user: { select: { username: true, displayName: true } },
@@ -132,6 +135,22 @@ export class CommentModerationService {
   async getFlaggedComments(options: { skip?: number; take?: number } = {}) {
     return this.prisma.comment.findMany({
       where: { isFlagged: true },
+      include: {
+        post: { select: { id: true, title: true, slug: true } },
+        user: { select: { username: true, displayName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: options.skip || 0,
+      take: options.take || 20,
+    });
+  }
+
+  /**
+   * Get approved comments (for admin review)
+   */
+  async getApprovedComments(options: { skip?: number; take?: number } = {}) {
+    return this.prisma.comment.findMany({
+      where: { isApproved: true, isSpam: false },
       include: {
         post: { select: { id: true, title: true, slug: true } },
         user: { select: { username: true, displayName: true } },
@@ -252,6 +271,38 @@ export class CommentModerationService {
         },
       },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async vote(commentId: string, deltaUp: number, deltaDown: number) {
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: {
+        upvotes: { increment: deltaUp },
+        downvotes: { increment: deltaDown },
+      },
+    });
+  }
+
+  async togglePin(commentId: string, pinned: boolean, moderatorId: string) {
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: {
+        isPinned: pinned,
+        moderatedBy: moderatorId,
+        moderatedAt: new Date(),
+      },
+    });
+  }
+
+  async markResolved(commentId: string, resolved: boolean, moderatorId: string) {
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: {
+        isResolved: resolved,
+        moderatedBy: moderatorId,
+        moderatedAt: new Date(),
+      },
     });
   }
 

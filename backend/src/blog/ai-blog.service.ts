@@ -273,29 +273,54 @@ Focus on providing genuine value to readers while naturally incorporating these 
     const maxTags = settings?.maxTagsPerPost || 10;
     
     const limitedTags = tagNames.slice(0, maxTags);
+    const allToConnect = new Set<string>();
 
     for (const tagName of limitedTags) {
+      const normalized = tagName.trim().toLowerCase();
+      if (!normalized) continue;
       const slug = this.slugify(tagName);
 
-      // Find or create tag
-      const tag = await this.prisma.tag.upsert({
-        where: { slug },
-        create: {
-          name: tagName,
-          slug: slug,
-          usageCount: 1,
-        },
-        update: {
-          usageCount: { increment: 1 },
+      // Find by slug, name or synonym
+      let tag = await this.prisma.tag.findFirst({
+        where: {
+          OR: [
+            { slug },
+            { name: { equals: tagName, mode: 'insensitive' } },
+            { synonyms: { has: normalized } },
+          ],
         },
       });
 
-      // Link tag to post
+      if (tag) {
+        await this.prisma.tag.update({
+          where: { id: tag.id },
+          data: {
+            usageCount: { increment: 1 },
+            synonymHits: tag.synonyms.includes(normalized) ? { increment: 1 } : undefined,
+          },
+        });
+      } else {
+        tag = await this.prisma.tag.create({
+          data: {
+            name: tagName,
+            slug,
+            usageCount: 1,
+          },
+        });
+      }
+
+      allToConnect.add(tag.id);
+
+      // Auto-attach linked tags if configured
+      (tag.linkedTagIds as string[] | undefined)?.forEach(id => allToConnect.add(id));
+    }
+
+    if (allToConnect.size > 0) {
       await this.prisma.post.update({
         where: { id: postId },
         data: {
           tags: {
-            connect: { id: tag.id },
+            connect: Array.from(allToConnect).map(id => ({ id })),
           },
         },
       });

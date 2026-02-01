@@ -71,6 +71,16 @@ export class CommentController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR')
+  @Get('moderation/approved')
+  async getApprovedComments(@Query('skip') skip?: string, @Query('take') take?: string) {
+    return this.moderationService.getApprovedComments({
+      skip: skip ? parseInt(skip) : 0,
+      take: take ? parseInt(take) : 20,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR')
   @Get('moderation/stats')
   async getCommentStats() {
     return this.moderationService.getCommentStats();
@@ -95,6 +105,28 @@ export class CommentController {
   @Patch(':id/flag')
   async flagComment(@Param('id') id: string, @Body() body: { reason: string }) {
     return this.moderationService.flagComment(id, body.reason);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMINISTRATOR', 'EDITOR')
+  @Patch(':id/pin')
+  async pinComment(@Param('id') id: string, @Body() body: { pinned: boolean }, @Request() req: any) {
+    return this.moderationService.togglePin(id, body.pinned ?? true, req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMINISTRATOR', 'EDITOR')
+  @Patch(':id/resolved')
+  async resolveComment(@Param('id') id: string, @Body() body: { resolved: boolean }, @Request() req: any) {
+    return this.moderationService.markResolved(id, body.resolved ?? true, req.user.id);
+  }
+
+  @Public()
+  @Patch(':id/vote')
+  async voteComment(@Param('id') id: string, @Body() body: { up?: boolean; down?: boolean }) {
+    const deltaUp = body.up ? 1 : 0;
+    const deltaDown = body.down ? 1 : 0;
+    return this.moderationService.vote(id, deltaUp, deltaDown);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

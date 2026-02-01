@@ -296,10 +296,18 @@ export class BlogController {
     });
   }
 
+  // Duplicate tag suggestions
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR')
+  @Get('admin/tags/duplicates')
+  async getDuplicateTags() {
+    return this.enhancedBlogService.findDuplicateTags();
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR')
   @Post('admin/tags')
-  async createTag(@Body() data: { name: string; slug: string; description?: string; color?: string; icon?: string; parentId?: string }) {
+  async createTag(@Body() data: any) {
     return this.enhancedBlogService.createTag(data);
   }
 
@@ -322,6 +330,42 @@ export class BlogController {
   @Post('admin/tags/merge')
   async mergeTags(@Body() data: { sourceIds: string[]; targetId: string }) {
     return this.enhancedBlogService.mergeTags(data.sourceIds, data.targetId);
+  }
+
+  // Bulk set parent
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR')
+  @Post('admin/tags/bulk/parent')
+  async bulkParent(@Body() data: { ids: string[]; parentId?: string | null }) {
+    return this.enhancedBlogService.bulkSetParent(data.ids, data.parentId || null);
+  }
+
+  // Bulk style update
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR')
+  @Post('admin/tags/bulk/style')
+  async bulkStyle(@Body() data: { ids: string[]; color?: string; icon?: string; featured?: boolean }) {
+    return this.enhancedBlogService.bulkUpdateStyle(data.ids, {
+      color: data.color,
+      icon: data.icon,
+      featured: data.featured,
+    });
+  }
+
+  // Lock/unlock tags
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMINISTRATOR', 'SUPER_ADMIN')
+  @Post('admin/tags/lock')
+  async lockTags(@Body() data: { ids: string[]; locked: boolean }) {
+    return this.enhancedBlogService.bulkLock(data.ids, data.locked);
+  }
+
+  // Convert tags to categories
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMINISTRATOR', 'SUPER_ADMIN')
+  @Post('admin/tags/convert-to-category')
+  async convertTags(@Body() data: { ids: string[] }) {
+    return this.enhancedBlogService.convertTagsToCategories(data.ids);
   }
 
   // SEO Audit Endpoints

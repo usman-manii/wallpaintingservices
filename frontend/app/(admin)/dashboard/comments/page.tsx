@@ -28,7 +28,9 @@ import {
   Calendar,
   FileText,
   CheckSquare,
-  X
+  X,
+  Pin,
+  CheckCircle2
 } from 'lucide-react';
 
 type CommentType = {
@@ -43,6 +45,10 @@ type CommentType = {
   isSpam: boolean;
   isFlagged: boolean;
   flagReason?: string;
+  isPinned?: boolean;
+  isResolved?: boolean;
+  upvotes?: number;
+  downvotes?: number;
   post: { id: string; title: string; slug: string };
   user?: { username: string; displayName: string };
   replies?: CommentType[];
@@ -64,7 +70,7 @@ export default function CommentModerationPage() {
   const fetchComments = useCallback(async () => {
     setLoading(true);
     try {
-      const endpoint = activeTab === 'approved' ? '/blog' : `/comments/moderation/${activeTab}`;
+      const endpoint = `/comments/moderation/${activeTab}`;
       const data = await fetchAPI(endpoint, { redirectOn401: false, cache: 'no-store' });
       setComments(Array.isArray(data) ? data : []);
       errorShownRef.current['comments'] = false; // Reset on success
@@ -78,7 +84,7 @@ export default function CommentModerationPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab]);
+  }, [activeTab, showError]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -93,7 +99,7 @@ export default function CommentModerationPage() {
         showError(errorMsg);
       }
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     fetchComments();
@@ -133,6 +139,38 @@ export default function CommentModerationPage() {
       },
       'danger'
     );
+  };
+
+  const handlePin = async (id: string, pinned: boolean) => {
+    try {
+      await fetchAPI(`/comments/${id}/pin`, {
+        method: 'PATCH',
+        body: JSON.stringify({ pinned }),
+        redirectOn401: false,
+        cache: 'no-store',
+      });
+      success(pinned ? 'Comment pinned' : 'Comment unpinned');
+      fetchComments();
+    } catch (error: any) {
+      console.error('Error pinning comment:', error);
+      showError(error.message || 'Failed to pin comment');
+    }
+  };
+
+  const handleResolve = async (id: string, resolved: boolean) => {
+    try {
+      await fetchAPI(`/comments/${id}/resolved`, {
+        method: 'PATCH',
+        body: JSON.stringify({ resolved }),
+        redirectOn401: false,
+        cache: 'no-store',
+      });
+      success(resolved ? 'Marked resolved' : 'Marked unresolved');
+      fetchComments();
+    } catch (error: any) {
+      console.error('Error resolving comment:', error);
+      showError(error.message || 'Failed to update resolution');
+    }
   };
 
   const handleBulkApprove = async () => {

@@ -8,6 +8,7 @@ import TrendingPostsWidget from '@/components/widgets/TrendingPostsWidget';
 import UpcomingPostsWidget from '@/components/widgets/UpcomingPostsWidget';
 import PageByIdRenderer from '@/components/PageByIdRenderer';
 import { API_URL } from '@/lib/api';
+import TagExplorer from '@/components/tags/TagExplorer';
 
 // Types
 interface Post {
@@ -91,6 +92,10 @@ export default async function BlogPage() {
       <div className="mb-12 text-center max-w-3xl mx-auto">
         <h1 className="text-4xl font-bold text-foreground mb-4">{settings.siteName}</h1>
         <p className="text-xl text-muted-foreground">{settings.description}</p>
+      </div>
+
+      <div className="mb-10">
+        <TagExplorer />
       </div>
 
       <div className={`grid gap-8 ${isDualColumn ? 'lg:grid-cols-3' : 'grid-cols-1 max-w-4xl mx-auto'}`}>

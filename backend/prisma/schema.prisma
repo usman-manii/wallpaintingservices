@@ -146,6 +146,11 @@ model Tag {
   usageCount Int     @default(0)
   trending   Boolean @default(false)
   featured   Boolean @default(false)
+  mergeCount Int     @default(0)
+  synonymHits Int    @default(0)
+  synonyms   String[] @default([]) // Alias terms that map to this tag
+  linkedTagIds String[] @default([]) // Companion tags to auto-attach
+  locked     Boolean @default(false) // Prevent deletion/rename without admin
 
   // Multilingual Support
   language     String?  @default("en") // ISO 639-1 code: en, ar, hi, es, fr, de, etc.
@@ -238,6 +243,8 @@ model Comment {
   content   String   @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  editedAt  DateTime?
+  editedBy  String?
 
   postId String
   post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
@@ -255,6 +262,9 @@ model Comment {
   isSpam     Boolean @default(false)
   isFlagged  Boolean @default(false)
   flagReason String?
+  isPinned   Boolean @default(false)
+  isResolved Boolean @default(false)
+  staffNote  String?
 
   // Nested Comments (threading)
   parentId String?
@@ -268,6 +278,11 @@ model Comment {
   // Admin actions
   moderatedBy String?
   moderatedAt DateTime?
+
+  // Engagement
+  upvotes  Int   @default(0)
+  downvotes Int  @default(0)
+  reactions Json?
 
   @@index([postId, isApproved])
   @@index([userId])

@@ -49,10 +49,16 @@ export class BlogService {
   }
 
   async findOne(slug: string) {
-    return this.prisma.post.findFirst({
+    const post = await this.prisma.post.findFirst({
       where: { slug, status: 'PUBLISHED' },
       include: { author: true, categories: true, tags: true },
     });
+
+    if (post?.content && post.tags?.length) {
+      post.content = this.linkTagsInContent(post.content, post.tags);
+    }
+
+    return post;
   }
 
   // Update
@@ -81,5 +87,22 @@ export class BlogService {
     return this.prisma.post.delete({
       where,
     });
+  }
+
+  /**
+   * Lightweight auto-linking of tag mentions to tag archive pages
+   */
+  private linkTagsInContent(content: string, tags: { name: string; slug: string }[]) {
+    let html = content;
+    for (const tag of tags) {
+      const pattern = new RegExp(`(?![^<]*>)\\b(${this.escapeRegex(tag.name)})\\b`, 'i');
+      const replacement = `<a href="/blog?tag=${tag.slug}" class="text-blue-600 underline">$1</a>`;
+      html = html.replace(pattern, replacement);
+    }
+    return html;
+  }
+
+  private escapeRegex(text: string) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
