@@ -106,7 +106,7 @@ export default function AdminSidebar() {
 
   useEffect(() => {
       // Auto-open dropdowns based on current path
-      if (pathname.startsWith('/dashboard/posts') || pathname.startsWith('/dashboard/tags') || pathname.startsWith('/dashboard/categories') || pathname.startsWith('/dashboard/media')) {
+      if (pathname.startsWith('/dashboard/posts') || pathname.startsWith('/dashboard/tags') || pathname.startsWith('/dashboard/categories')) {
         setOpenDropdowns(['Posts']);
       }
       if (pathname.startsWith('/dashboard/pages')) {

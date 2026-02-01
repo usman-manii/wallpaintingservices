@@ -94,7 +94,7 @@ export default function MediaManagerPage() {
     } finally {
       setLoading(false);
     }
-  }, [folderFilter]);
+  }, [folderFilter, showError]);
 
   useEffect(() => {
     fetchMedia();
