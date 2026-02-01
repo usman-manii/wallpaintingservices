@@ -2,11 +2,6 @@
 const nextConfig = {
   reactStrictMode: true,
   
-  // ESLint configuration
-  eslint: {
-    dirs: ['app', 'components', 'lib', 'contexts'],
-  },
-  
   // Performance optimizations
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
