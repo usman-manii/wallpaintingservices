@@ -1,0 +1,6 @@
+# Trivy ignore file
+# Add CVE IDs to ignore during security scans
+
+# Development dependencies - acceptable risk
+# CVE-2024-XXXXX
+

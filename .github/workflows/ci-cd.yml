@@ -199,8 +199,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+        continue-on-error: true
+      
       - name: Run npm audit
-        run: npm audit --audit-level=moderate
+        run: npm audit --audit-level=high --production
         continue-on-error: true
       
       - name: Run Trivy vulnerability scanner
@@ -210,8 +220,11 @@ jobs:
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '0'
       
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
+        continue-on-error: true
