@@ -7,19 +7,37 @@ import { UploadVerificationFileDto } from './dto/verification-file.dto';
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
   
+  // PERFORMANCE FIX: In-memory cache for settings (5 minute TTL)
+  private settingsCache: any = null;
+  private cacheTimestamp = 0;
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  
   constructor(private prisma: PrismaService) {}
 
   async getSettings() {
+    // PERFORMANCE FIX: Return cached settings if still valid
+    const now = Date.now();
+    if (this.settingsCache && (now - this.cacheTimestamp) < this.CACHE_TTL) {
+      return this.settingsCache;
+    }
+    
     const settings = await this.prisma.siteSettings.findFirst();
     if (!settings) {
       // Create default if not exists
-      return this.prisma.siteSettings.create({
+      const newSettings = await this.prisma.siteSettings.create({
         data: {
           siteName: 'My AI Blog',
           description: 'A futuristic blog powered by AI',
         },
       });
+      this.settingsCache = newSettings;
+      this.cacheTimestamp = now;
+      return newSettings;
     }
+    
+    // Update cache
+    this.settingsCache = settings;
+    this.cacheTimestamp = now;
     return settings;
   }
 
@@ -55,10 +73,16 @@ export class SettingsService {
         }
       });
       
-      return await this.prisma.siteSettings.update({
+      const updated = await this.prisma.siteSettings.update({
         where: { id: start.id },
         data: cleanData,
       });
+      
+      // PERFORMANCE FIX: Invalidate cache when settings are updated
+      this.settingsCache = updated;
+      this.cacheTimestamp = Date.now();
+      
+      return updated;
     } catch (error: any) {
       // Log the actual error for debugging using NestJS Logger
       this.logger.error(`Error updating settings: ${error.message}`, error.stack);

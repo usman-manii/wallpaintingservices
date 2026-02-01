@@ -29,14 +29,48 @@ const UserSessionContext = createContext<UserSessionContextType>({
   logout: async () => {},
 });
 
+// PERFORMANCE FIX: Singleton cache to prevent redundant profile loads
+let userProfileCache: User | null = null;
+let userProfileCacheTimestamp = 0;
+let pendingUserProfileFetch: Promise<User> | null = null;
+const USER_PROFILE_CACHE_TTL = 60 * 1000; // 1 minute
+
+async function fetchUserProfileSingleton(): Promise<User> {
+  const now = Date.now();
+  
+  // Return cached profile if still valid
+  if (userProfileCache && (now - userProfileCacheTimestamp) < USER_PROFILE_CACHE_TTL) {
+    return userProfileCache;
+  }
+  
+  // Return existing promise if fetch is in progress
+  if (pendingUserProfileFetch) {
+    return pendingUserProfileFetch;
+  }
+  
+  // Start new fetch
+  pendingUserProfileFetch = (async () => {
+    try {
+      const profile = await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: false });
+      const normalized = (profile as any)?.user || profile || {};
+      userProfileCache = normalized;
+      userProfileCacheTimestamp = now;
+      return normalized;
+    } finally {
+      pendingUserProfileFetch = null;
+    }
+  })();
+  
+  return pendingUserProfileFetch;
+}
+
 export function UserSessionProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(userProfileCache);
+  const [role, setRole] = useState<string | null>(userProfileCache?.role || null);
+  const [loading, setLoading] = useState(!userProfileCache);
 
   const loadProfile = useCallback(async () => {
-    const profile = await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: false });
-    const normalized = (profile as any)?.user || profile || {};
+    const normalized = await fetchUserProfileSingleton();
     const nextRole = normalized.role || null;
     setUser(normalized);
     setRole(nextRole);
@@ -57,9 +91,11 @@ export function UserSessionProvider({ children }: { children: React.ReactNode })
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Clear state regardless of API call result
+      // Clear state and cache
       setUser(null);
       setRole(null);
+      userProfileCache = null;
+      userProfileCacheTimestamp = 0;
       
       // Clear local storage
       if (typeof window !== 'undefined') {

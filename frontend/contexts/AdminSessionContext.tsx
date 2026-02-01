@@ -30,15 +30,49 @@ const AdminSessionContext = createContext<AdminSessionContextType>({
   logout: async () => {},
 });
 
+// PERFORMANCE FIX: Singleton cache to prevent redundant profile loads
+let profileCache: AdminUser | null = null;
+let profileCacheTimestamp = 0;
+let pendingProfileFetch: Promise<AdminUser> | null = null;
+const PROFILE_CACHE_TTL = 60 * 1000; // 1 minute
+
+async function fetchProfileSingleton(): Promise<AdminUser> {
+  const now = Date.now();
+  
+  // Return cached profile if still valid
+  if (profileCache && (now - profileCacheTimestamp) < PROFILE_CACHE_TTL) {
+    return profileCache;
+  }
+  
+  // Return existing promise if fetch is in progress
+  if (pendingProfileFetch) {
+    return pendingProfileFetch;
+  }
+  
+  // Start new fetch
+  pendingProfileFetch = (async () => {
+    try {
+      const profile = await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: false });
+      const normalized = (profile as any)?.user || profile || {};
+      profileCache = normalized;
+      profileCacheTimestamp = now;
+      return normalized;
+    } finally {
+      pendingProfileFetch = null;
+    }
+  })();
+  
+  return pendingProfileFetch;
+}
+
 export function AdminSessionProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [user, setUser] = useState<AdminUser | null>(null);
-  const [role, setRole] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<AdminUser | null>(profileCache);
+  const [role, setRole] = useState<string | null>(profileCache?.role || null);
+  const [loading, setLoading] = useState(!profileCache);
 
   const loadProfile = useCallback(async () => {
-    const profile = await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: false });
-    const normalized = (profile as any)?.user || profile || {};
+    const normalized = await fetchProfileSingleton();
     const nextRole = normalized.role || null;
     setUser(normalized);
     setRole(nextRole);
@@ -65,9 +99,11 @@ export function AdminSessionProvider({ children }: { children: React.ReactNode }
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Clear state regardless of API call result
+      // Clear state and cache
       setUser(null);
       setRole(null);
+      profileCache = null;
+      profileCacheTimestamp = 0;
       
       // Clear local storage
       if (typeof window !== 'undefined') {

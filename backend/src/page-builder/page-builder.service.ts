@@ -83,7 +83,13 @@ export class PageBuilderService {
     return page;
   }
 
-  async getAllPages(filters?: { status?: string; pageType?: string; authorId?: string }) {
+  async getAllPages(filters?: { 
+    status?: string; 
+    pageType?: string; 
+    authorId?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
     const where: any = {};
     
     // Only apply status filter if explicitly provided (not 'ALL')
@@ -101,21 +107,33 @@ export class PageBuilderService {
       where.authorId = filters.authorId;
     }
 
-    this.logger.log(`[PageBuilderService] getAllPages query: ${JSON.stringify(where)}`);
+    // PERFORMANCE FIX: Add pagination (default 50 pages per request)
+    const page = filters?.page || 1;
+    const pageSize = filters?.pageSize || 50;
+    const skip = (page - 1) * pageSize;
+    
+    this.logger.log(`[PageBuilderService] getAllPages query: ${JSON.stringify(where)} (page ${page}, size ${pageSize})`);
 
-    const pages = await this.prisma.page.findMany({
-      where,
-      include: {
-        author: { select: { id: true, username: true, email: true } },
-        versions: { orderBy: { versionNumber: 'desc' }, take: 1 },
-        children: true,
-        parent: true,
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
+    const [pages, total] = await Promise.all([
+      this.prisma.page.findMany({
+        where,
+        include: {
+          author: { select: { id: true, username: true, email: true } },
+          // PERFORMANCE FIX: Only include version count, not all version data
+          _count: { select: { versions: true } },
+          // PERFORMANCE FIX: Limit children to prevent deep hierarchy loads
+          children: { take: 10, select: { id: true, title: true, slug: true } },
+          parent: { select: { id: true, title: true, slug: true } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.page.count({ where }),
+    ]);
 
-    this.logger.log(`[PageBuilderService] Found ${pages.length} pages in database`);
-    return pages;
+    this.logger.log(`[PageBuilderService] Found ${pages.length}/${total} pages in database`);
+    return { pages, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
   async getPageById(id: string) {

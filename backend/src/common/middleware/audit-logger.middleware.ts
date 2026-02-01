@@ -32,22 +32,21 @@ export class AuditLoggerMiddleware implements NestMiddleware {
         );
       }
 
-      // Log critical actions to database for audit trail
+      // Log critical actions to database for audit trail (fire-and-forget for performance)
       if (this.shouldAudit(method, originalUrl, statusCode)) {
-        try {
-          await this.logToDatabase({
-            userId,
-            method,
-            url: originalUrl,
-            statusCode,
-            ip,
-            userAgent,
-            duration,
-            timestamp: new Date(),
-          });
-        } catch (error) {
+        // PERFORMANCE FIX: Don't await - log asynchronously to avoid blocking response
+        this.logToDatabase({
+          userId,
+          method,
+          url: originalUrl,
+          statusCode,
+          ip,
+          userAgent,
+          duration,
+          timestamp: new Date(),
+        }).catch((error) => {
           this.logger.error(`Failed to log audit entry: ${error.message}`);
-        }
+        });
       }
     });
 

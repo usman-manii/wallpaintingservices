@@ -37,15 +37,38 @@ function validateApiUrl(): string {
 // Validated API URL - will throw on startup if invalid in production
 export const API_URL = validateApiUrl();
 
+// PERFORMANCE FIX: Request deduplication - prevent duplicate in-flight requests
+const pendingRequests = new Map<string, Promise<any>>();
+
+function createRequestKey(endpoint: string, options: RequestInit): string {
+  const method = options.method || 'GET';
+  const body = options.body ? JSON.stringify(options.body) : '';
+  return `${method}:${endpoint}:${body}`;
+}
+
 type RequestWithRetry = RequestInit & { __retried?: boolean; redirectOn401?: boolean; timeout?: number };
 
 export async function fetchAPI(endpoint: string, options: RequestWithRetry = {}) {
+  // PERFORMANCE FIX: Deduplicate GET requests - return existing promise if in flight
+  const method = options.method || 'GET';
+  if (method === 'GET' && !options.__retried) {
+    const requestKey = createRequestKey(endpoint, options);
+    if (pendingRequests.has(requestKey)) {
+      return pendingRequests.get(requestKey);
+    }
+  }
+  
   // Default timeout: 30 seconds
   const timeout = options.timeout || 30000;
   
-  // Create abort controller for timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  // Wrap fetch logic to manage deduplication
+  const requestKey = method === 'GET' ? createRequestKey(endpoint, options) : null;
+  
+  const fetchPromise = (async () => {
+    try {
+      // Create abort controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
   
   // Ensure endpoint starts with /
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -134,7 +157,20 @@ export async function fetchAPI(endpoint: string, options: RequestWithRetry = {})
       return null;
     }
     throw err;
+  } finally {
+    // Clean up deduplication map
+    if (requestKey) {
+      pendingRequests.delete(requestKey);
+    }
   }
+  })();
+  
+  // Store promise for GET requests to enable deduplication
+  if (requestKey) {
+    pendingRequests.set(requestKey, fetchPromise);
+  }
+  
+  return fetchPromise;
 }
 
 // Export as both fetchAPI and api for convenience
