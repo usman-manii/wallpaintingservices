@@ -86,7 +86,7 @@ const nextConfig = {
           "frame-ancestors 'none'",
           process.env.NODE_ENV === 'production' ? "upgrade-insecure-requests" : "",
         ].filter(Boolean).join('; ')
-      }
+      },
     ];
 
     return [
@@ -100,14 +100,13 @@ const nextConfig = {
           ...securityHeaders,
           {
             key: 'Cache-Control',
-            value: 'public, max-age=300, s-maxage=600, stale-while-revalidate=86400'
+            value: 'public, s-maxage=300, stale-while-revalidate=600'
           }
         ]
       },
       {
         source: '/static/:path*',
         headers: [
-          ...securityHeaders,
           {
             key: 'Cache-Control',
             value: 'public, max-age=31536000, immutable'
@@ -120,6 +119,42 @@ const nextConfig = {
           {
             key: 'Cache-Control',
             value: 'public, max-age=31536000, immutable'
+          }
+        ]
+      },
+      {
+        source: '/favicon.ico',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, immutable'
+          }
+        ]
+      },
+      {
+        source: '/apple-touch-icon.png',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, immutable'
+          }
+        ]
+      },
+      {
+        source: '/favicon-16x16.png',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, immutable'
+          }
+        ]
+      },
+      {
+        source: '/favicon-32x32.png',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, immutable'
           }
         ]
       }

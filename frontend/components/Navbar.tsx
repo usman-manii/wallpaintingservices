@@ -3,12 +3,13 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { LayoutDashboard, Newspaper, ShieldCheck } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/Button';
-import { API_URL } from '@/lib/api';
+import { useUserSession } from '@/contexts/UserSessionContext';
+import { usePublicSettings } from '@/contexts/SettingsContext';
 
 type MenuLocations = {
   primary?: boolean;
@@ -49,52 +50,33 @@ function normalizeMenuUrl(url?: string): string {
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const isAdmin = pathname.startsWith('/dashboard') || pathname.startsWith('/settings'); // /settings redirects to /dashboard/settings
-  const [navLinks, setNavLinks] = useState<Array<{ href: string; label: string }>>([]);
+  const isAdmin = pathname.startsWith('/dashboard') || pathname.startsWith('/settings');
+  const { role, loading } = useUserSession();
+  const { settings } = usePublicSettings();
 
-  useEffect(() => {
-    let isMounted = true;
+  const navLinks = useMemo(() => {
+    if (!settings?.menuStructure?.menus) return [];
+    
+    const menus = Array.isArray(settings.menuStructure.menus) ? settings.menuStructure.menus : [];
+    if (menus.length === 0) return [];
 
-    const loadPrimaryMenu = async () => {
-      try {
-        const res = await fetch(`${API_URL}/settings/public`, { cache: 'no-store' });
-        if (!res.ok) return;
-        const settings: PublicSettings = await res.json();
-        const menus = Array.isArray(settings?.menuStructure?.menus) ? settings.menuStructure!.menus! : [];
-        if (menus.length === 0) {
-          if (isMounted) setNavLinks([]);
-          return;
-        }
+    const primaryMenu =
+      menus.find((m) => m.locations?.primary) ||
+      menus.find((m) => m.id === 'main') ||
+      menus[0];
 
-        const primaryMenu =
-          menus.find((m) => m.locations?.primary) ||
-          menus.find((m) => m.id === 'main') ||
-          menus[0];
+    if (!primaryMenu?.items) return [];
 
-        const items = Array.isArray(primaryMenu?.items) ? [...primaryMenu!.items!] : [];
-        items.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const items = [...primaryMenu.items];
+    items.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-        const links = items
-          .filter((item) => item?.label && item?.url)
-          .map((item) => ({
-            href: normalizeMenuUrl(item.url),
-            label: item.label,
-          }));
-
-        if (isMounted) {
-          setNavLinks(links);
-        }
-      } catch (error) {
-        console.error('Failed to load primary menu:', error);
-      }
-    };
-
-    loadPrimaryMenu();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    return items
+      .filter((item) => item?.label && item?.url)
+      .map((item) => ({
+        href: normalizeMenuUrl(item.url),
+        label: item.label,
+      }));
+  }, [settings]);
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm transition-all duration-200">
@@ -130,7 +112,18 @@ export function Navbar() {
           </NavLink>
           <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 hidden sm:block" />
           <ThemeToggle />
-          <NavLink href="/dashboard" aria-label="Admin Dashboard" className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors" onNavigate={router.push}>
+          <NavLink
+            href="/dashboard"
+            aria-label="Admin Dashboard"
+            className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+            onNavigate={(href) => {
+              if (!loading && !role) {
+                router.push(`/auth?next=${encodeURIComponent(href)}`);
+                return;
+              }
+              router.push(href);
+            }}
+          >
             {isAdmin ? <LayoutDashboard size={20} className="text-blue-600 dark:text-blue-400" /> : <ShieldCheck size={20} />}
           </NavLink>
         </div>

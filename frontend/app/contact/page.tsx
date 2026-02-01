@@ -11,7 +11,9 @@ type PageData = {
 async function getContactPage(): Promise<PageData | null> {
   try {
     const slug = encodeURIComponent('contact');
-    const res = await fetch(`${API_URL}/pages/slug/${slug}`, { cache: 'no-store' });
+    const res = await fetch(`${API_URL}/pages/slug/${slug}`, {
+      next: { revalidate: 300 } // Cache for 5 minutes
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as PageData;
     if (data?.status && data.status !== 'PUBLISHED') return null;

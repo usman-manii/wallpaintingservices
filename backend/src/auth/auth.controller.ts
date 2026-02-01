@@ -10,7 +10,7 @@ import { Roles } from './roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from './user.service';
 import { CaptchaService } from '../captcha/captcha.service';
-import { Response } from 'express';
+import { Response, CookieOptions } from 'express';
 
 /**
  * Authentication Controller
@@ -136,11 +136,17 @@ export class AuthController {
     return { user: result.user };
   }
 
+  @Public()
   @Post('logout')
   async logout(@Res({ passthrough: true }) res: Response) {
-    res.cookie('access_token', '', { maxAge: 0, path: '/', httpOnly: true });
-    res.cookie('refresh_token', '', { maxAge: 0, path: '/', httpOnly: true });
-    res.cookie('csrf-token', '', { maxAge: 0, path: '/' });
+    const cookieOptions = this.buildCookieOptions();
+
+    // Clear both primary and legacy cookie paths so no stale tokens linger
+    res.cookie('access_token', '', { ...cookieOptions, maxAge: 0, path: '/' });
+    res.cookie('refresh_token', '', { ...cookieOptions, maxAge: 0, path: '/' });
+    res.cookie('refresh_token', '', { ...cookieOptions, maxAge: 0, path: '/auth/refresh' });
+    res.cookie('csrf-token', '', { ...this.buildCsrfCookieOptions(), maxAge: 0, path: '/' });
+
     return { message: 'Logged out' };
   }
 
@@ -226,31 +232,50 @@ export class AuthController {
   }
 
   private setAuthCookies(res: Response, access: string, refresh: string) {
-    const secure = process.env.NODE_ENV === 'production';
+    const cookieOptions = this.buildCookieOptions();
     res.cookie('access_token', access, {
-      httpOnly: true,
-      secure,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 1000 * 60 * 15, // 15 minutes
+      ...cookieOptions,
+      maxAge: this.parseMs(process.env.JWT_ACCESS_MAXAGE_MS, 1000 * 60 * 15),
     });
     res.cookie('refresh_token', refresh, {
-      httpOnly: true,
-      secure,
-      sameSite: 'lax',
-      path: '/auth/refresh',
-      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+      ...cookieOptions,
+      path: '/',
+      maxAge: this.parseMs(process.env.JWT_REFRESH_MAXAGE_MS, 1000 * 60 * 60 * 24 * 30),
     });
   }
 
   private setCsrfCookie(res: Response) {
     const token = crypto.randomBytes(24).toString('hex');
-    res.cookie('csrf-token', token, {
-      httpOnly: false,
-      sameSite: 'lax',
-      path: '/',
-      secure: process.env.NODE_ENV === 'production',
-    });
+    res.cookie('csrf-token', token, this.buildCsrfCookieOptions());
     res.setHeader('x-csrf-token', token);
+  }
+
+  private buildCookieOptions(): CookieOptions {
+    const secure = (process.env.COOKIE_SECURE ?? process.env.NODE_ENV === 'production') === 'true' || process.env.NODE_ENV === 'production';
+    const sameSiteEnv = (process.env.COOKIE_SAMESITE || '').toLowerCase();
+    const sameSite: CookieOptions['sameSite'] =
+      sameSiteEnv === 'none' ? 'none' : sameSiteEnv === 'strict' ? 'strict' : 'lax';
+    const domain = process.env.COOKIE_DOMAIN || undefined;
+    return {
+      httpOnly: true,
+      secure,
+      sameSite,
+      domain,
+      path: '/',
+    };
+  }
+
+  private buildCsrfCookieOptions(): CookieOptions {
+    const base = this.buildCookieOptions();
+    return {
+      ...base,
+      httpOnly: false,
+    };
+  }
+
+  private parseMs(raw: string | undefined, fallback: number): number {
+    if (!raw) return fallback;
+    const val = Number(raw);
+    return Number.isFinite(val) && val > 0 ? val : fallback;
   }
 }

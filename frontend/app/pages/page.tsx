@@ -17,7 +17,7 @@ interface Page {
 async function getPublishedPages(): Promise<Page[]> {
   try {
     const res = await fetch(`${API_URL}/pages/public`, {
-      next: { revalidate: 3600 } // Revalidate every hour
+      next: { revalidate: 300 } // Cache for 5 minutes
     });
     
     if (!res.ok) {

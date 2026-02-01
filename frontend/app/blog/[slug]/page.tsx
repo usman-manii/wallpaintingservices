@@ -9,12 +9,10 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { ArrowLeft, Calendar, User, Clock, Eye } from 'lucide-react';
 import { API_URL } from '@/lib/api';
 
-export const revalidate = 300; // 5 mins
-
 async function getPost(slug: string) {
   try {
     const res = await fetch(`${API_URL}/blog/${slug}`, {
-       next: { revalidate: 300 }
+       next: { revalidate: 60 } // Cache for 1 minute
     });
     if (!res.ok) return null;
     return res.json();
@@ -26,7 +24,7 @@ async function getPost(slug: string) {
 async function getRelatedPosts(postId: string) {
   try {
     const res = await fetch(`${API_URL}/blog/${postId}/related`, {
-      next: { revalidate: 600 }
+      next: { revalidate: 120 } // Cache for 2 minutes
     });
     if (!res.ok) return [];
     return res.json();

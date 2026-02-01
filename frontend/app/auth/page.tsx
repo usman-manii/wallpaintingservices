@@ -1,20 +1,26 @@
 // frontend/app/auth/page.tsx
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { fetchAPI } from '@/lib/api';
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Lock, Mail, User } from 'lucide-react';
 import { Captcha } from '@/components/auth/Captcha';
+import { useUserSession } from '@/contexts/UserSessionContext';
+import { finalizeAuthSuccess, loginUser, registerUser } from '@/lib/authClient';
+import Link from 'next/link';
 
 type Mode = 'login' | 'signup';
 
 export default function AuthPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>('login');
+  const { refreshSession } = useUserSession();
+  const searchParams = useSearchParams();
+  const initialMode = (searchParams?.get('mode') === 'signup' ? 'signup' : 'login') as Mode;
+  const nextParam = searchParams?.get('next');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -27,6 +33,13 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
 
   const captchaRequired = process.env.NODE_ENV === 'production';
+
+  useEffect(() => {
+    const modeFromUrl = searchParams?.get('mode');
+    if (modeFromUrl === 'login' || modeFromUrl === 'signup') {
+      setMode(modeFromUrl);
+    }
+  }, [searchParams]);
 
   const resetCaptcha = () => {
     setCaptchaVerified(false);
@@ -70,20 +83,18 @@ export default function AuthPage() {
           }
         : {};
 
-      const data = await fetchAPI('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          password,
-          ...captchaPayload,
-        }),
+      const user = await loginUser({
+        email,
+        password,
+        ...captchaPayload,
       });
 
-      if (data?.user?.role) {
-        localStorage.setItem('user_role', data.user.role);
-      }
-      router.push('/dashboard');
+      await finalizeAuthSuccess({
+        user,
+        refreshSession,
+        router,
+        next: nextParam,
+      });
     } catch (err: any) {
       setError(err.message || 'Invalid email or password');
       resetCaptcha();
@@ -117,24 +128,22 @@ export default function AuthPage() {
           }
         : {};
 
-      const data = await fetchAPI('/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          password,
-          username,
-          firstName,
-          lastName,
-          name: `${firstName} ${lastName}`.trim(),
-          ...captchaPayload,
-        }),
+      const user = await registerUser({
+        email,
+        password,
+        username,
+        firstName,
+        lastName,
+        name: `${firstName} ${lastName}`.trim(),
+        ...captchaPayload,
       });
 
-      if (data?.user?.role) {
-        localStorage.setItem('user_role', data.user.role);
-      }
-      router.push('/dashboard');
+      await finalizeAuthSuccess({
+        user,
+        refreshSession,
+        router,
+        next: nextParam,
+      });
     } catch (err: any) {
       const errorMsg = err.message || 'Registration failed';
       if (errorMsg.includes('already exists') || errorMsg.includes('duplicate') || errorMsg.includes('unique')) {
@@ -240,6 +249,17 @@ export default function AuthPage() {
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </div>
+
+              {mode === 'login' && (
+                <div className="text-right">
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+              )}
               
               <div className="py-2">
                 <Captcha 
@@ -277,6 +297,21 @@ export default function AuthPage() {
                   </button>
                 </p>
               )}
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-600">
+              <Link
+                href="/forgot-password"
+                className="text-center border border-slate-200 dark:border-slate-700 rounded-lg py-2 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+              >
+                Forgot password
+              </Link>
+              <Link
+                href="/reset-password"
+                className="text-center border border-slate-200 dark:border-slate-700 rounded-lg py-2 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+              >
+                Reset with token
+              </Link>
             </div>
           </CardContent>
         </Card>

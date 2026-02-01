@@ -2,8 +2,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { API_URL } from '@/lib/api';
+import { useMemo } from 'react';
+import { usePublicSettings } from '@/contexts/SettingsContext';
 
 type MenuItem = {
   id: string;
@@ -34,19 +34,17 @@ function normalizeMenuUrl(url?: string): string {
   return url;
 }
 
-async function getFooterMenuItems(): Promise<Array<{ href: string; label: string }>> {
-  try {
-    const res = await fetch(`${API_URL}/settings/public`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const settings: PublicSettings = await res.json();
-    const menus = Array.isArray(settings?.menuStructure?.menus) ? settings.menuStructure!.menus! : [];
+export function Footer() {
+  const { settings } = usePublicSettings();
+
+  const footerLinks = useMemo(() => {
+    if (!settings?.menuStructure?.menus) return [];
+    
+    const menus = Array.isArray(settings.menuStructure.menus) ? settings.menuStructure.menus : [];
     if (menus.length === 0) return [];
 
-    const footerMenu =
-      menus.find((m) => m.locations?.footer) ||
-      null;
-
-    if (!footerMenu || !Array.isArray(footerMenu.items)) return [];
+    const footerMenu = menus.find((m) => m.locations?.footer) || null;
+    if (!footerMenu?.items) return [];
 
     const items = [...footerMenu.items];
     items.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -57,26 +55,7 @@ async function getFooterMenuItems(): Promise<Array<{ href: string; label: string
         href: normalizeMenuUrl(item.url),
         label: item.label,
       }));
-  } catch (error) {
-    console.error('Failed to load footer menu:', error);
-    return [];
-  }
-}
-
-export function Footer() {
-  const [footerLinks, setFooterLinks] = useState<Array<{ href: string; label: string }>>([]);
-
-  useEffect(() => {
-    let isMounted = true;
-    getFooterMenuItems().then((links) => {
-      if (isMounted) {
-        setFooterLinks(links);
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  }, [settings]);
 
   return (
     <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-12">

@@ -38,7 +38,9 @@ interface PageData {
 async function fetchPageIdBySlug(slug: string): Promise<string | null> {
   try {
     const encodedSlug = encodeURIComponent(slug);
-    const res = await fetch(`${API_URL}/pages/slug/${encodedSlug}`, { cache: 'no-store' });
+    const res = await fetch(`${API_URL}/pages/slug/${encodedSlug}`, {
+      next: { revalidate: 300 } // Cache for 5 minutes
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as PageData;
     if (data?.status && data.status !== 'PUBLISHED') return null;
@@ -60,8 +62,12 @@ async function getData() {
   try {
     // Parallel fetch for perf
     const [settingsRes, postsRes] = await Promise.all([
-      fetch(`${API_URL}/settings/public`, { cache: 'no-store' }), // Use public endpoint and force fresh data
-      fetch(`${API_URL}/blog?take=10`, { next: { revalidate: 60 } })
+      fetch(`${API_URL}/settings/public`, {
+        next: { revalidate: 300 } // Cache for 5 minutes
+      }),
+      fetch(`${API_URL}/blog?take=10`, {
+        next: { revalidate: 60 } // Cache blog posts for 1 minute
+      })
     ]);
 
     let settings: SiteSettings = { homePageLayout: 'single', siteName: 'Blog', description: '', homePageId: null, blogPageId: null };
@@ -119,6 +125,16 @@ export default async function Home() {
       <div className="mb-12 text-center max-w-3xl mx-auto">
         <h1 className="text-4xl font-bold text-slate-900 mb-4">{settings.siteName}</h1>
         <p className="text-xl text-slate-600">{settings.description}</p>
+        <div className="mt-6 flex items-center justify-center gap-4">
+          <Link href="/auth?mode=login">
+            <Button className="px-6">Login</Button>
+          </Link>
+          <Link href="/auth?mode=signup">
+            <Button variant="outline" className="px-6">
+              Sign Up
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className={`grid gap-8 ${isDualColumn ? 'lg:grid-cols-3' : 'grid-cols-1 max-w-4xl mx-auto'}`}>

@@ -10,7 +10,6 @@ import * as crypto from 'crypto';
 @Injectable()
 export class CsrfGuard implements CanActivate {
   private readonly logger = new Logger(CsrfGuard.name);
-  private readonly tokenSecret = process.env.APP_SECRET || 'fallback-secret-key-change-in-production';
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
@@ -49,29 +48,24 @@ export class CsrfGuard implements CanActivate {
    */
   generateTokenPair(): { token: string; secret: string } {
     const secret = crypto.randomBytes(32).toString('hex');
-    const token = this.hashToken(secret);
-    
-    return { token, secret };
+    // For double-submit cookie the same value is sent in cookie and header
+    return { token: secret, secret };
   }
 
   /**
    * Validate CSRF token
    */
-  private validateToken(providedToken: string, secret: string): boolean {
-    const expectedToken = this.hashToken(secret);
-    return crypto.timingSafeEqual(
-      Buffer.from(providedToken, 'utf8'),
-      Buffer.from(expectedToken, 'utf8')
-    );
-  }
-
-  /**
-   * Hash token with secret
-   */
-  private hashToken(secret: string): string {
-    return crypto
-      .createHmac('sha256', this.tokenSecret)
-      .update(secret)
-      .digest('hex');
+  private validateToken(providedToken: string, cookieToken: string): boolean {
+    // Double-submit cookie pattern: the same random token must appear in header and cookie
+    if (!providedToken || !cookieToken) return false;
+    if (providedToken.length !== cookieToken.length) return false;
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(providedToken, 'utf8'),
+        Buffer.from(cookieToken, 'utf8'),
+      );
+    } catch {
+      return false;
+    }
   }
 }

@@ -33,8 +33,12 @@ async function getData() {
   try {
     // Parallel fetch for perf
     const [settingsRes, postsRes] = await Promise.all([
-      fetch(`${API_URL}/settings/public`, { cache: 'no-store' }),
-      fetch(`${API_URL}/blog?take=20`, { next: { revalidate: 60 } })
+      fetch(`${API_URL}/settings/public`, {
+        next: { revalidate: 300 } // Cache for 5 minutes
+      }),
+      fetch(`${API_URL}/blog?take=20`, {
+        next: { revalidate: 60 } // Cache blog posts for 1 minute
+      })
     ]);
 
     let settings: SiteSettings = { homePageLayout: 'single', siteName: 'Blog', description: '', blogPageId: null };

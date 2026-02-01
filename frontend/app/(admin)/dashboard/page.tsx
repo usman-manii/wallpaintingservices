@@ -21,7 +21,7 @@ import { Plus, Settings, LogOut, CheckCircle, RefreshCw, FileText } from 'lucide
   useEffect(() => {
       setIsAuthenticated(true);
       loadDrafts();
-    }, [router]);
+    }, []);
 
   async function loadDrafts() {
       try {

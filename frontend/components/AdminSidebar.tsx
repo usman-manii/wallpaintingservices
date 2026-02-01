@@ -33,7 +33,7 @@ import {
   Phone
 } from 'lucide-react';
 import { useState, createContext, useContext, useEffect } from 'react';
-import { API_URL } from '@/lib/api';
+import { useAdminSession } from '@/contexts/AdminSessionContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -89,14 +89,6 @@ const navigation = [
       },
 ];
 
-function getRoleFromToken(): string | null {
-  // Role now comes from server session cookie; we can't decode httpOnly cookie client-side.
-  // Fallback: keep existing localStorage role if present during transition.
-  if (typeof window === 'undefined') return null;
-  const role = localStorage.getItem('user_role');
-  return role;
-}
-
 // Context for sidebar state
 const SidebarContext = createContext({ isCollapsed: false, toggleCollapse: () => {} });
 
@@ -106,13 +98,12 @@ export function useSidebar() {
 
 export default function AdminSidebar() {
   const pathname = usePathname();
+  const { role, logout } = useAdminSession();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [role, setRole] = useState<string | null>(null);
   const [openDropdowns, setOpenDropdowns] = useState<string[]>([]); // All dropdowns closed by default
 
   useEffect(() => {
-      setRole(getRoleFromToken());
       // Auto-open dropdowns based on current path
       if (pathname.startsWith('/dashboard/posts') || pathname.startsWith('/dashboard/tags') || pathname.startsWith('/dashboard/categories') || pathname.startsWith('/dashboard/media')) {
         setOpenDropdowns(['Posts']);
@@ -129,13 +120,10 @@ export default function AdminSidebar() {
   }, [pathname]);
 
   const handleLogout = async () => {
-    localStorage.removeItem('user_role');
-    try {
-      await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
-    } catch (e) {
-      // ignore
+    await logout();
+    if (typeof window !== 'undefined') {
+      window.location.href = '/auth';
     }
-    window.location.href = '/auth';
   };
 
   const toggleCollapse = () => {

@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { EnvironmentValidator } from './common/guards/env-validation';
 import { randomBytes } from 'crypto';
+import cookieParser from 'cookie-parser';
 
 /**
  * Bootstrap the NestJS application with enterprise-grade security and optimizations
@@ -83,6 +84,24 @@ async function bootstrap() {
   // 2. Response Compression (Gzip)
   // Reduces bandwidth usage and improves response times
   app.use(compression());
+
+  // 2.1 Cookie parsing for httpOnly auth cookies
+  // Use a strong secret so signed cookies cannot be tampered with
+  const cookieSecret = process.env.COOKIE_SECRET || process.env.JWT_SECRET || 'change-me-cookie-secret';
+  app.use(cookieParser(cookieSecret));
+
+  // 2.2 Cache headers - prevent stale HTML/API responses that force users to hard-refresh
+  app.use((req, res, next) => {
+    // Allow long-term caching for obvious static assets; everything else is no-store
+    const cacheSafePrefixes = ['/assets/', '/static/', '/favicon', '/robots.txt', '/sitemap', '/_next/'];
+    const isCacheSafe = cacheSafePrefixes.some((prefix) => req.url.startsWith(prefix));
+    if (!isCacheSafe) {
+      res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+    next();
+  });
 
   // 3. CORS Configuration - Enterprise Grade
   // Allow requests from frontend and production domains with strict security

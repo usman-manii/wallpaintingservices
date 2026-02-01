@@ -88,6 +88,11 @@ export default function FeedbackPage() {
     return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
   };
 
+  const formatMetric = (value: any, decimals = 1, fallback = '0.0') => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num.toFixed(decimals) : fallback;
+  };
+
   if (loading) {
     return (
       <div className="p-6">
@@ -270,7 +275,7 @@ export default function FeedbackPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-slate-600 dark:text-slate-400">Average Links per Post</span>
-                <span className="font-semibold">{overview.interlinking?.avgLinksPerPost?.toFixed(1) || '0.0'}</span>
+                <span className="font-semibold">{formatMetric(overview.interlinking?.avgLinksPerPost)}</span>
               </div>
             </div>
           </CardContent>

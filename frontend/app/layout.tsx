@@ -1,4 +1,7 @@
 // frontend/app/layout.tsx
+// Removed aggressive cache-busting that was causing performance issues
+// Pages can set their own revalidation strategies as needed
+
 import './globals.css';
 import type { Metadata } from 'next';
 import CookieConsent from '@/components/CookieConsent';
@@ -7,6 +10,8 @@ import { ToastProvider } from '@/components/ui/Toast';
 import ClientLayoutWrapper from '@/components/ClientLayoutWrapper';
 import { GoogleAnalytics, GoogleTagManager } from '@/components/Analytics';
 import VerificationMeta from '@/components/VerificationMeta';
+import { UserSessionProvider } from '@/contexts/UserSessionContext';
+import { SettingsProvider } from '@/contexts/SettingsContext';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
@@ -98,15 +103,19 @@ export default function RootLayout({
         className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans antialiased selection:bg-blue-100 dark:selection:bg-blue-900 selection:text-blue-900 dark:selection:text-blue-100 transition-colors duration-200"
         suppressHydrationWarning
       >
-        <ThemeProvider>
-          <ToastProvider>
-            <VerificationMeta />
-            <ClientLayoutWrapper>
-              {children}
-            </ClientLayoutWrapper>
-            <CookieConsent />
-          </ToastProvider>
-        </ThemeProvider>
+        <UserSessionProvider>
+          <SettingsProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <VerificationMeta />
+                <ClientLayoutWrapper>
+                  {children}
+                </ClientLayoutWrapper>
+                <CookieConsent />
+              </ToastProvider>
+            </ThemeProvider>
+          </SettingsProvider>
+        </UserSessionProvider>
       </body>
     </html>
   );

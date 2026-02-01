@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react';
-import { fetchAPI } from '@/lib/api';
+import { usePublicSettings } from '@/contexts/SettingsContext';
 
 export type CaptchaType = 'recaptcha-v2' | 'recaptcha-v3' | 'custom';
 
@@ -12,7 +12,7 @@ export interface CaptchaProps {
 }
 
 export function Captcha({ onVerify, type }: CaptchaProps) {
-  const [config, setConfig] = useState<any>(null);
+  const { settings } = usePublicSettings();
   const [currentMethod, setCurrentMethod] = useState<CaptchaType | null>(type || null);
   const [fallbackMode, setFallbackMode] = useState(false);
 
@@ -23,22 +23,12 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
   }, [type]);
 
   useEffect(() => {
-     fetchAPI('/settings/public')
-      .then(data => {
-         if(!data) {
-             console.warn("Using default captcha config (Custom)");
-             setConfig({ captchaType: 'custom' });
-             if (!type) setCurrentMethod('custom');
-         } else {
-             setConfig(data);
-             if (!type) setCurrentMethod(data.captchaType || 'recaptcha-v2');
-         }
-      })
-      .catch(() => {
-          setConfig({ captchaType: 'custom' });
-          if (!type) setCurrentMethod('custom');
-      });
-  }, [type]);
+    if (!settings) return;
+    
+    if (!type) {
+      setCurrentMethod(settings.captchaType || 'recaptcha-v2');
+    }
+  }, [settings, type]);
 
   const handleFallback = useCallback(() => {
       console.warn(`Captcha Fallback triggered from ${currentMethod}`);
@@ -46,7 +36,7 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
 
       if (currentMethod === 'recaptcha-v3') {
           // Fallback V3 -> V2 -> Custom
-          if (config?.recaptchaV2SiteKey) {
+          if (settings?.recaptchaV2SiteKey) {
               setCurrentMethod('recaptcha-v2');
           } else {
               setCurrentMethod('custom');
@@ -55,7 +45,7 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
           // Fallback V2 -> V3 (if not tried) -> Custom
           // Note: Usually if V2 fails (script block), V3 also fails.
           // But strict requirement says support fallbacks.
-          if (config?.recaptchaV3SiteKey && !fallbackMode) {
+          if (settings?.recaptchaV3SiteKey && !fallbackMode) {
              // Logic simplified: If V2 fails, go to Custom safely, unless V3 explicitly requested as fallback
              // Let's go to Custom for reliability.
              setCurrentMethod('custom');
@@ -65,9 +55,9 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
       } else {
           // Custom failed? Retry custom.
       }
-  }, [currentMethod, config, fallbackMode]);
+  }, [currentMethod, settings, fallbackMode]);
 
-  if (!config || !currentMethod) return <div className="h-12 w-full bg-slate-100 dark:bg-slate-800 animate-pulse rounded-md" />;
+  if (!settings || !currentMethod) return <div className="h-12 w-full bg-slate-100 dark:bg-slate-800 animate-pulse rounded-md" />;
 
   return (
     <div className="min-h-[50px] transition-all">
@@ -80,7 +70,7 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
 
        {currentMethod === 'recaptcha-v3' && (
           <RecaptchaV3 
-            siteKey={config.recaptchaV3SiteKey} 
+            siteKey={settings.recaptchaV3SiteKey} 
             onVerify={(t) => onVerify(t, undefined, 'recaptcha-v3')} 
             onError={handleFallback}
           />
@@ -88,7 +78,7 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
        
        {currentMethod === 'recaptcha-v2' && (
           <RecaptchaV2 
-            siteKey={config.recaptchaV2SiteKey || config.recaptchaSiteKey} 
+            siteKey={settings.recaptchaV2SiteKey || settings.recaptchaSiteKey} 
             onVerify={(t) => onVerify(t, undefined, 'recaptcha-v2')} 
             onError={handleFallback}
           />

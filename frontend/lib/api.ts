@@ -35,7 +35,9 @@ function validateApiUrl(): string {
 // Validated API URL - will throw on startup if invalid in production
 export const API_URL = validateApiUrl();
 
-export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
+type RequestWithRetry = RequestInit & { __retried?: boolean; redirectOn401?: boolean };
+
+export async function fetchAPI(endpoint: string, options: RequestWithRetry = {}) {
   // Respect FormData bodies (do not set Content-Type so browser can set boundary)
   const isFormDataBody = options && (options as any).body instanceof FormData;
   const headers: Record<string,string> = {
@@ -51,6 +53,9 @@ export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
     res = await fetch(`${API_URL}${endpoint}`, {
       ...options,
       headers,
+      cache: options.cache ?? 'no-store',
+      // Ensure Next.js server-side fetches don't cache either
+      next: { revalidate: 0, ...(options as any).next },
       credentials: 'include', // SECURITY FIX: Send httpOnly cookies
     });
   } catch (err: any) {
@@ -59,24 +64,27 @@ export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
 
   // Special handling for unauthorized responses in browser environments
   if (res.status === 401 && typeof window !== 'undefined') {
+    const shouldRedirect = options.redirectOn401 === true;
     // Attempt silent refresh once
-    try {
-      const refreshRes = await fetch(`${API_URL}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (refreshRes.ok) {
-        // retry original request once after refresh
-        return fetchAPI(endpoint, options);
+    if (!options.__retried) {
+      try {
+        const refreshRes = await fetch(`${API_URL}/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (refreshRes.ok) {
+          return fetchAPI(endpoint, { ...options, __retried: true });
+        }
+      } catch (_) {
+        // ignore refresh errors
       }
-    } catch (_) {
-      // ignore refresh errors
     }
-    try {
-      // Hard logout and redirect
-      await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
-    } catch (_) {}
-    window.location.replace('/auth');
+    if (shouldRedirect) {
+      try {
+        await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
+      } catch (_) {}
+      window.location.replace('/auth');
+    }
     const err = await res.json().catch(() => ({ message: 'Unauthorized' }));
     throw new Error(err.message || 'Unauthorized');
   }

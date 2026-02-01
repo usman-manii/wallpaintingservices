@@ -3,6 +3,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Request } from 'express';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -11,8 +12,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!secret || secret.length < 32) {
       throw new Error('JWT_SECRET is missing or too short. Set a >=32 char secret.');
     }
+
+    const cookieExtractor = (req: Request): string | null => {
+      if (!req || !req.cookies) return null;
+      return (req.cookies['access_token'] as string) || null;
+    };
+
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        cookieExtractor,
+      ]),
       ignoreExpiration: false,
       secretOrKey: secret,
     });

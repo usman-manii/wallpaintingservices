@@ -1,21 +1,172 @@
+# ============================================
+# COMPREHENSIVE .GITIGNORE FOR PRODUCTION
+# ============================================
+
 # Dependencies
 node_modules/
+bower_components/
+jspm_packages/
+.pnp/
+.pnp.js
 
 # Builds
 dist/
+build/
 .next/
 out/
 coverage/
+.turbo/
+.vercel/
 
-# Logs and temp files
+# Environment variables (NEVER commit these!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.production
+*.env
+
+# Logs
+logs/
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+.npm
 *.err.log
 *.tsbuildinfo
 frontend/dev-server.log
 frontend/dev-server.err.log
 
-# OS / editor
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+.jest-cache/
+
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+.npm/
+.yarn/
+
+# OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
-.idea/
+desktop.ini
+
+# Editor directories and files
 .vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+.vs/
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+postgres-backups/*.sql
+postgres-backups/*.sql.gz
+
+# Uploads & Media
+uploads/
+public/uploads/*
+!public/uploads/README.md
+frontend/public/uploads/*
+!frontend/public/uploads/README.md
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# Certificates & Keys (CRITICAL - NEVER COMMIT!)
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+ssl/
+certificates/
+
+# Secrets
+secrets/
+.secrets/
+
+# Docker volumes
+.docker/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+.temp/
+
+# Mac specific
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows specific
+$RECYCLE.BIN/
+
+# Linux specific
+.directory
+.Trash-*
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Package manager locks (optional - uncomment if not tracking)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Sitemap & robots (generated)
+backend/public/sitemap.xml
+backend/public/robots.txt
+
+# Analytics & tracking
+.analytics/
+.stats/
+
+# Miscellaneous
+.npmrc
+.yarnrc
+.pnp.*
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz

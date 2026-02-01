@@ -1,8 +1,8 @@
 // frontend/components/VerificationMeta.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
-import { API_URL } from '@/lib/api';
+import { useEffect, useMemo } from 'react';
+import { usePublicSettings } from '@/contexts/SettingsContext';
 
 interface VerificationSettings {
   googleSiteVerification?: string;
@@ -14,37 +14,22 @@ interface VerificationSettings {
 }
 
 export default function VerificationMeta() {
-  const [verification, setVerification] = useState<VerificationSettings>({});
-  const [loaded, setLoaded] = useState(false);
+  const { settings, loading } = usePublicSettings();
+
+  const verification = useMemo<VerificationSettings>(() => {
+    if (!settings) return {};
+    return {
+      googleSiteVerification: settings.googleSiteVerification,
+      bingSiteVerification: settings.bingSiteVerification,
+      yandexSiteVerification: settings.yandexSiteVerification,
+      pinterestVerification: settings.pinterestVerification,
+      facebookDomainVerification: settings.facebookDomainVerification,
+      customVerificationTag: settings.customVerificationTag,
+    };
+  }, [settings]);
 
   useEffect(() => {
-    // Fetch public settings to get verification codes
-    (async () => {
-      try {
-        const res = await fetch(`${API_URL}/settings/public`);
-        if (!res.ok) {
-          console.error('Failed to load verification settings: HTTP', res.status);
-          return;
-        }
-        const data = await res.json();
-        setVerification({
-          googleSiteVerification: data.googleSiteVerification,
-          bingSiteVerification: data.bingSiteVerification,
-          yandexSiteVerification: data.yandexSiteVerification,
-          pinterestVerification: data.pinterestVerification,
-          facebookDomainVerification: data.facebookDomainVerification,
-          customVerificationTag: data.customVerificationTag,
-        });
-      } catch (err) {
-        console.error('Failed to load verification settings:', err);
-      } finally {
-        setLoaded(true);
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (!loaded) return;
+    if (loading || !settings) return;
 
     // Remove existing verification meta tags
     const existingTags = document.querySelectorAll('meta[name*="verification"], meta[name="p:domain_verify"], meta[name="facebook-domain-verification"]');
@@ -120,7 +105,7 @@ export default function VerificationMeta() {
         head.appendChild(customMeta);
       }
     }
-  }, [verification, loaded]);
+  }, [verification, loading, settings]);
 
   return null; // This component doesn't render anything
 }

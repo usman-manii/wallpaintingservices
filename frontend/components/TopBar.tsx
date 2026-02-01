@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { Phone, Mail, MapPin, Facebook, Twitter, Instagram, Linkedin, Youtube } from 'lucide-react';
-import { API_URL } from '@/lib/api';
+import { usePublicSettings } from '@/contexts/SettingsContext';
 
 interface ContactInfo {
   phone?: string;
@@ -15,52 +15,24 @@ interface ContactInfo {
   youtube?: string;
 }
 
-interface PublicSettings {
-  topBarEnabled?: boolean;
-  contactInfo?: ContactInfo | string;
-}
-
 export function TopBar() {
   // Build-time feature flag: keep top bar off unless explicitly enabled.
   const topBarFeatureEnabled = process.env.NEXT_PUBLIC_ENABLE_TOP_BAR === 'true';
+  const { settings } = usePublicSettings();
 
-  const [settings, setSettings] = useState<PublicSettings>({});
-  const [contactInfo, setContactInfo] = useState<ContactInfo>({});
-
-  useEffect(() => {
-    // Skip all network work when feature is disabled
-    if (!topBarFeatureEnabled) return;
-
-    // Fetch public settings to check if top bar is enabled
-    (async () => {
+  const contactInfo = useMemo(() => {
+    if (!settings?.contactInfo) return {};
+    
+    // Parse contactInfo if it's a string
+    if (typeof settings.contactInfo === 'string') {
       try {
-        const res = await fetch(`${API_URL}/settings/public`);
-        if (!res.ok) {
-          console.error('Failed to load settings:', res.status);
-          return;
-        }
-        const data = await res.json();
-        setSettings(data);
-        
-        // Parse contactInfo if it's a string
-        let parsedContactInfo: ContactInfo = {};
-        if (data.contactInfo) {
-          if (typeof data.contactInfo === 'string') {
-            try {
-              parsedContactInfo = JSON.parse(data.contactInfo);
-            } catch {
-              parsedContactInfo = {};
-            }
-          } else {
-            parsedContactInfo = data.contactInfo;
-          }
-        }
-        setContactInfo(parsedContactInfo);
-      } catch (err) {
-        console.error('Failed to load top bar settings:', err);
+        return JSON.parse(settings.contactInfo) as ContactInfo;
+      } catch {
+        return {};
       }
-    })();
-  }, []);
+    }
+    return settings.contactInfo as ContactInfo;
+  }, [settings]);
 
   // Feature flag wins first
   if (!topBarFeatureEnabled) {
