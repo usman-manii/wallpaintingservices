@@ -3,6 +3,8 @@ import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import CommentSection from '@/components/CommentSection';
+import ReadingProgress from '@/components/ReadingProgress';
+import TableOfContents from '@/components/TableOfContents';
 import ShareButtons from '@/components/ShareButtons';
 import { Button } from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -19,6 +21,27 @@ async function getPost(slug: string) {
   } catch (e) {
     return null;
   }
+}
+
+function slugify(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+
+function buildContentWithToc(html: string) {
+  const headings: { id: string; text: string; level: number }[] = [];
+  let index = 0;
+  const contentWithIds = html.replace(/<h([2-3])[^>]*>(.*?)<\/h\1>/gi, (match, level, text) => {
+    const plainText = text.replace(/<[^>]+>/g, '').trim();
+    const id = `${slugify(plainText)}-${index++}`;
+    headings.push({ id, text: plainText, level: parseInt(level, 10) });
+    return `<h${level} id="${id}">${text}</h${level}>`;
+  });
+  return { contentWithIds, toc: headings };
 }
 
 async function getRelatedPosts(postId: string) {
@@ -114,8 +137,12 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
 
   const relatedPosts = await getRelatedPosts(post.id);
 
+  // Build TOC and inject ids into content
+  const { contentWithIds, toc } = buildContentWithToc(post.content || '');
+
   return (
     <div className="bg-background min-h-screen pb-20">
+      <ReadingProgress targetId="post-content" />
       {/* Hero Header with Featured Image */}
       <div className="bg-sidebar text-sidebar-foreground py-20 px-4 relative overflow-hidden">
         {post.featuredImage && (
@@ -174,15 +201,16 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 -mt-10 relative z-20">
-        <div className="space-y-8">
+      <div className="max-w-6xl mx-auto px-4 -mt-10 relative z-20">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Main Content */}
-          <article className="bg-card rounded-xl shadow-elevation-3 border border-border p-8 md:p-12">
+          <article className="bg-card rounded-xl shadow-elevation-3 border border-border p-8 md:p-12 lg:col-span-8">
             <div 
+              id="post-content"
               className="prose prose-lg prose-slate dark:prose-invert max-w-none mb-12"
               // SECURITY NOTE: Content is sanitized on backend using SanitizationUtil.sanitizeHTML()
               // which removes script tags, event handlers, and dangerous protocols
-              dangerouslySetInnerHTML={{ __html: post.content }} 
+              dangerouslySetInnerHTML={{ __html: contentWithIds }} 
             />
 
             {/* Categories */}
@@ -208,6 +236,11 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
               <ShareButtons title={post.title} />
             </div>
           </article>
+
+          {/* TOC / Sidebar */}
+          <div className="lg:col-span-4 space-y-6">
+            <TableOfContents items={toc} />
+          </div>
           
           {/* Related Posts - 4 Column Horizontal Layout */}
           {relatedPosts && relatedPosts.length > 0 && (

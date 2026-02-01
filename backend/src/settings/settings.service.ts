@@ -1,10 +1,12 @@
 // src/settings/settings.service.ts
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadVerificationFileDto } from './dto/verification-file.dto';
 
 @Injectable()
 export class SettingsService {
+  private readonly logger = new Logger(SettingsService.name);
+  
   constructor(private prisma: PrismaService) {}
 
   async getSettings() {
@@ -58,8 +60,8 @@ export class SettingsService {
         data: cleanData,
       });
     } catch (error: any) {
-      // Log the actual error for debugging
-      console.error('[SettingsService] Error updating settings:', error);
+      // Log the actual error for debugging using NestJS Logger
+      this.logger.error(`Error updating settings: ${error.message}`, error.stack);
       throw new BadRequestException(
         error.message || 'Failed to update settings. Please check the data format.'
       );

@@ -526,15 +526,15 @@ export default function TagManagementPage() {
             <span>Tag color (customizable per tag)</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#ef4444] border border-slate-200 dark:border-slate-700" />
+            <div className="w-3 h-3 rounded-full bg-error border border-slate-200 dark:border-slate-700" />
             <span>Usage: High (top quartile)</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#22c55e] border border-slate-200 dark:border-slate-700" />
+            <div className="w-3 h-3 rounded-full bg-success border border-slate-200 dark:border-slate-700" />
             <span>Usage: Medium (middle quartile)</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#94a3b8] border border-slate-200 dark:border-slate-700" />
+            <div className="w-3 h-3 rounded-full bg-slate-400 border border-slate-200 dark:border-slate-700" />
             <span>Usage: Low (bottom half)</span>
           </div>
           <div className="flex items-center gap-2">

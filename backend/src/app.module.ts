@@ -21,6 +21,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { CaptchaModule } from './captcha/captcha.module';
 import { HealthModule } from './health/health.module';
 import { AuditLoggerMiddleware } from './common/middleware/audit-logger.middleware';
+import { CsrfProtection } from './common/middleware/csrf-protection.middleware';
 import { CategoryModule } from './category/category.module';
 import { FeedbackModule } from './feedback/feedback.module';
 
@@ -77,9 +78,13 @@ import { FeedbackModule } from './feedback/feedback.module';
 export class AppModule implements NestModule {
   /**
    * Configure middleware for the application
-   * Applies audit logging to all routes
+   * Applies CSRF protection and audit logging to all routes
    */
   configure(consumer: MiddlewareConsumer) {
+    // Apply CSRF protection to all routes (with internal exemptions)
+    consumer.apply(CsrfProtection).forRoutes('*');
+    
+    // Apply audit logging to all routes
     consumer.apply(AuditLoggerMiddleware).forRoutes('*');
   }
 }

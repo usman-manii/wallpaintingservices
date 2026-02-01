@@ -86,7 +86,7 @@ export default function CommentModerationPage() {
     }
   }, [activeTab, showError]);
 
-  const fetchStats = useCallback(async () => {
+const fetchStats = useCallback(async () => {
     try {
       const data = await fetchAPI('/comments/moderation/stats', { redirectOn401: false, cache: 'no-store' });
       setStats(data || { total: 0, approved: 0, pending: 0, spam: 0, flagged: 0 });
@@ -99,7 +99,7 @@ export default function CommentModerationPage() {
         showError(errorMsg);
       }
     }
-  }, [showError]);
+}, [showError]);
 
   useEffect(() => {
     fetchComments();
@@ -184,23 +184,19 @@ export default function CommentModerationPage() {
       `Approve ${selectedComments.size} selected comment${selectedComments.size !== 1 ? 's' : ''}?`,
       async () => {
         try {
-          try {
-            await fetchAPI('/comments/moderation/bulk-approve', {
-              method: 'POST',
-              body: JSON.stringify({ ids: Array.from(selectedComments) }),
-              redirectOn401: false,
-              cache: 'no-store',
-            });
-            success(`${selectedComments.size} comment${selectedComments.size !== 1 ? 's' : ''} approved!`);
-            setSelectedComments(new Set());
-            fetchComments();
-            fetchStats();
-          } catch (error: any) {
-            console.error('Error bulk approving:', error);
-            showError(error.message || 'Failed to bulk approve');
-          }        } catch (error) {
+          await fetchAPI('/comments/moderation/bulk-approve', {
+            method: 'POST',
+            body: JSON.stringify({ ids: Array.from(selectedComments) }),
+            redirectOn401: false,
+            cache: 'no-store',
+          });
+          success(`${selectedComments.size} comment${selectedComments.size !== 1 ? 's' : ''} approved!`);
+          setSelectedComments(new Set());
+          fetchComments();
+          fetchStats();
+        } catch (error: any) {
           console.error('Error bulk approving:', error);
-          showError('Failed to bulk approve');
+          showError(error.message || 'Failed to bulk approve');
         }
       },
       'success'
@@ -438,7 +434,23 @@ export default function CommentModerationPage() {
                         {comment.content}
                       </div>
 
-                      <div className="flex items-center gap-3 text-sm">
+                      <div className="flex items-center gap-3 text-sm flex-wrap">
+                        <Badge variant="outline" size="sm">
+                          <ThumbsUp className="w-3 h-3 mr-1" /> {comment.upvotes || 0}
+                        </Badge>
+                        <Badge variant="outline" size="sm">
+                          <ThumbsDown className="w-3 h-3 mr-1" /> {comment.downvotes || 0}
+                        </Badge>
+                        {comment.isPinned && (
+                          <Badge variant="warning" size="sm">
+                            <Pin className="w-3 h-3 mr-1" /> Pinned
+                          </Badge>
+                        )}
+                        {comment.isResolved && (
+                          <Badge variant="success" size="sm">
+                            <CheckCircle2 className="w-3 h-3 mr-1" /> Resolved
+                          </Badge>
+                        )}
                         <a
                           href={`/blog/${comment.post.slug}`}
                           target="_blank"
@@ -475,6 +487,24 @@ export default function CommentModerationPage() {
                           onClick={() => handleReject(comment.id)}
                         >
                           <XCircle className="w-4 h-4" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip content={comment.isPinned ? 'Unpin comment' : 'Pin comment'}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handlePin(comment.id, !comment.isPinned)}
+                        >
+                          <Pin className="w-4 h-4" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip content={comment.isResolved ? 'Mark unresolved' : 'Mark resolved'}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleResolve(comment.id, !comment.isResolved)}
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
                         </Button>
                       </Tooltip>
                     </div>
