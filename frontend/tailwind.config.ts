@@ -95,12 +95,6 @@ const config: Config = {
           accent: "hsl(var(--sidebar-accent))",
         },
         
-        // Popover/Tooltip Colors
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
-        },
-        
         // Brand Colors
         brand: {
           50: '#f0f9ff',

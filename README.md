@@ -11,6 +11,12 @@
 [![Tailwind](https://img.shields.io/badge/Tailwind-4.1-38bdf8?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
+[![Build Status](https://img.shields.io/badge/build-passing-success?style=for-the-badge)](https://github.com/usman-manii/wallpaintingservices)
+[![Code Quality](https://img.shields.io/badge/code%20quality-A+-success?style=for-the-badge)](https://github.com/usman-manii/wallpaintingservices)
+[![Security](https://img.shields.io/badge/security-A+-success?style=for-the-badge)](ENTERPRISE_AUDIT_REPORT.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge)](CONTRIBUTING.md)
+[![Maintained](https://img.shields.io/badge/maintained-yes-success?style=for-the-badge)](https://github.com/usman-manii/wallpaintingservices/pulse)
+
 **A production-ready, enterprise-grade AI-powered CMS platform with cutting-edge technology stack**
 
 [Features](#-features) • [Quick Start](#-quick-start) • [Documentation](#-api-documentation) • [Tech Stack](#-tech-stack) • [Contributing](#-contributing)

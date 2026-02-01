@@ -2,11 +2,6 @@
 
 @layer base {
   :root {
-    /* Legacy RGB Variables */
-    --foreground-rgb: 15, 23, 42;
-    --background-start-rgb: 248, 250, 252;
-    --background-end-rgb: 255, 255, 255;
-    
     /* Semantic Color System - Light Mode */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
@@ -64,11 +59,6 @@
   }
   
   .dark {
-    /* Legacy RGB Variables */
-    --foreground-rgb: 248, 250, 252;
-    --background-start-rgb: 15, 23, 42;
-    --background-end-rgb: 30, 41, 59;
-    
     /* Semantic Color System - Dark Mode */
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -138,7 +128,6 @@
 
   body {
     @apply bg-slate-50 text-slate-900 antialiased;
-    color: rgb(var(--foreground-rgb));
   }
 
   .dark body {

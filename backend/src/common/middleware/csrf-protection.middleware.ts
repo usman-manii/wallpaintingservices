@@ -23,7 +23,7 @@ export class CsrfProtection implements NestMiddleware {
     '/api/auth/logout',   // Frontend logout endpoint
   ];
   
-  use(req: Request, res: Response, next: NextFunction) {
+  use(req: Request, _res: Response, next: NextFunction) {
     // Skip if method doesn't need CSRF protection
     if (!this.protectedMethods.includes(req.method)) {
       return next();
