@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -47,18 +47,10 @@ export default function EditPostPage() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newTagName, setNewTagName] = useState('');
 
-  // Fetch post data
-  useEffect(() => {
-    if (postId) {
-      fetchPost();
-      fetchCategoriesAndTags();
-    }
-  }, [postId]);
-
-  const fetchPost = async () => {
+  const fetchPost = useCallback(async () => {
     try {
       setLoadingPost(true);
-      const post = await fetchAPI(`/blog/admin/posts/${postId}`);
+      const post = await fetchAPI(`/blog/admin/posts/${postId}`, { redirectOn401: false, cache: 'no-store' });
 
       if (!post || !post.id) {
         throw new Error('Post not found.');
@@ -85,9 +77,9 @@ export default function EditPostPage() {
     } finally {
       setLoadingPost(false);
     }
-  };
+  }, [postId]);
 
-  const fetchCategoriesAndTags = async () => {
+  const fetchCategoriesAndTags = useCallback(async () => {
     try {
       // Temporarily using mock data - replace with actual API calls
       setAvailableCategories([
@@ -117,7 +109,15 @@ export default function EditPostPage() {
     } catch (error) {
       console.error('Error fetching categories/tags:', error);
     }
-  };
+  }, []);
+
+  // Fetch post data
+  useEffect(() => {
+    if (postId) {
+      fetchPost();
+      fetchCategoriesAndTags();
+    }
+  }, [postId, fetchPost, fetchCategoriesAndTags]);
 
   const createNewCategory = async () => {
     if (!newCategoryName.trim()) return;
@@ -128,6 +128,8 @@ export default function EditPostPage() {
           name: newCategoryName,
           slug: newCategoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       if (newCat && newCat.id) {
         setAvailableCategories([...availableCategories, newCat]);
@@ -151,6 +153,8 @@ export default function EditPostPage() {
           name: newTagName,
           slug: newTagName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       if (newTag && newTag.id) {
         setAvailableTags([...availableTags, newTag]);
@@ -209,6 +213,7 @@ export default function EditPostPage() {
       const data = await fetchAPI('/media/upload', {
         method: 'POST',
         body: formData,
+        redirectOn401: false,
       });
 
       // Return full URL if relative, or use as-is if absolute
@@ -254,6 +259,7 @@ export default function EditPostPage() {
           categoryIds: formData.categories,
           tagIds: formData.tags,
         }),
+        redirectOn401: false,
       });
 
       success('Post updated successfully!');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -44,14 +44,10 @@ export default function FeedbackPage() {
   const [postFeedback, setPostFeedback] = useState<any>(null);
   const [loadingPost, setLoadingPost] = useState(false);
 
-  useEffect(() => {
-    fetchOverview();
-  }, []);
-
-  const fetchOverview = async () => {
+  const fetchOverview = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchAPI('/feedback/overview');
+      const data = await fetchAPI('/feedback/overview', { redirectOn401: false, cache: 'no-store' });
       setOverview(data);
     } catch (error: any) {
       console.error('Error fetching feedback overview:', error);
@@ -59,13 +55,17 @@ export default function FeedbackPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showError]);
+
+  useEffect(() => {
+    fetchOverview();
+  }, [fetchOverview]);
 
   const fetchPostFeedback = async (postId: string) => {
     try {
       setLoadingPost(true);
       setSelectedPostId(postId);
-      const data = await fetchAPI(`/feedback/posts/${postId}`);
+      const data = await fetchAPI(`/feedback/posts/${postId}`, { redirectOn401: false, cache: 'no-store' });
       setPostFeedback(data);
     } catch (error: any) {
       console.error('Error fetching post feedback:', error);

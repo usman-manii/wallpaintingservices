@@ -1,7 +1,7 @@
 // frontend/app/(admin)/dashboard/cron-jobs/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
@@ -63,15 +63,9 @@ export default function CronJobsPage() {
   const [interlinkingStats, setInterlinkingStats] = useState<any>(null);
   const [triggering, setTriggering] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchCronJobs();
-    fetchSitemapStats();
-    fetchInterlinkingStats();
-  }, []);
-
-  const fetchCronJobs = async () => {
+  const fetchCronJobs = useCallback(async () => {
     try {
-      const data = await fetchAPI('/tasks/cron-jobs');
+      const data = await fetchAPI('/tasks/cron-jobs', { redirectOn401: false, cache: 'no-store' });
       setCronJobs(Array.isArray(data) ? data : []);
     } catch (error: any) {
       console.error('Error fetching cron jobs:', error);
@@ -79,31 +73,37 @@ export default function CronJobsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showError]);
 
-  const fetchSitemapStats = async () => {
+  const fetchSitemapStats = useCallback(async () => {
     try {
-      const data = await fetchAPI('/tasks/sitemap/stats');
+      const data = await fetchAPI('/tasks/sitemap/stats', { redirectOn401: false, cache: 'no-store' });
       setSitemapStats(data || {});
     } catch (error: any) {
       console.error('Error fetching sitemap stats:', error);
     }
-  };
+  }, []);
 
-  const fetchInterlinkingStats = async () => {
+  const fetchInterlinkingStats = useCallback(async () => {
     try {
-      const data = await fetchAPI('/blog/ai/interlink/stats');
+      const data = await fetchAPI('/blog/ai/interlink/stats', { redirectOn401: false, cache: 'no-store' });
       setInterlinkingStats(data || {});
     } catch (error: any) {
       console.error('Error fetching interlinking stats:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchCronJobs();
+    fetchSitemapStats();
+    fetchInterlinkingStats();
+  }, [fetchCronJobs, fetchSitemapStats, fetchInterlinkingStats]);
 
   const triggerJob = async (jobId: string) => {
     setTriggering(jobId);
     try {
       const endpoint = jobId.replace(/-/g, '-'); // scheduled-posts -> scheduled-posts
-      await fetchAPI(`/tasks/trigger/${endpoint}`, { method: 'POST' });
+      await fetchAPI(`/tasks/trigger/${endpoint}`, { method: 'POST', redirectOn401: false, cache: 'no-store' });
       success('Job triggered successfully! Check server logs for results.');
       fetchCronJobs();
     } catch (error: any) {
@@ -117,7 +117,7 @@ export default function CronJobsPage() {
   const generateSitemap = async () => {
     setTriggering('sitemap');
     try {
-      const data = await fetchAPI('/tasks/sitemap/generate', { method: 'POST' });
+      const data = await fetchAPI('/tasks/sitemap/generate', { method: 'POST', redirectOn401: false, cache: 'no-store' });
       success(`Sitemap generated! ${data?.stats?.totalUrls || 0} URLs included.`);
       fetchSitemapStats();
     } catch (error: any) {
@@ -151,8 +151,8 @@ export default function CronJobsPage() {
     return (
       <div className="p-8">
         <div className="mb-6">
-          <div className="h-8 w-64 bg-slate-200 dark:bg-slate-700 rounded animate-pulse mb-2"></div>
-          <div className="h-4 w-96 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+          <div className="h-8 w-64 bg-muted rounded animate-pulse mb-2"></div>
+          <div className="h-4 w-96 bg-muted rounded animate-pulse"></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           {[1, 2, 3, 4].map(i => (
@@ -171,8 +171,8 @@ export default function CronJobsPage() {
   return (
     <div className="p-8 space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">Cron Jobs Manager</h1>
-        <p className="text-slate-600 dark:text-slate-400">
+        <h1 className="text-3xl font-bold text-foreground mb-2">Cron Jobs Manager</h1>
+        <p className="text-muted-foreground">
           Automated background tasks running on schedule
         </p>
       </div>
@@ -184,8 +184,8 @@ export default function CronJobsPage() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">Total Jobs</p>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white">{cronJobs.length}</p>
+                  <p className="text-sm text-muted-foreground">Total Jobs</p>
+                  <p className="text-2xl font-bold text-foreground">{cronJobs.length}</p>
                 </div>
                 <Zap className="w-8 h-8 text-blue-600" />
               </div>
@@ -198,7 +198,7 @@ export default function CronJobsPage() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">Active</p>
+                  <p className="text-sm text-muted-foreground">Active</p>
                   <p className="text-2xl font-bold text-green-600">
                     {cronJobs.filter(j => j.status === 'active').length}
                   </p>
@@ -214,7 +214,7 @@ export default function CronJobsPage() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">Planned</p>
+                  <p className="text-sm text-muted-foreground">Planned</p>
                   <p className="text-2xl font-bold text-orange-600">
                     {cronJobs.filter(j => j.status === 'planned').length}
                   </p>
@@ -230,8 +230,8 @@ export default function CronJobsPage() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">Categories</p>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                  <p className="text-sm text-muted-foreground">Categories</p>
+                  <p className="text-2xl font-bold text-foreground">
                     {Object.keys(groupedJobs).length}
                   </p>
                 </div>
@@ -254,8 +254,8 @@ export default function CronJobsPage() {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Total URLs</p>
-                <p className="text-xl font-bold text-slate-900 dark:text-white">{sitemapStats.totalUrls}</p>
+                <p className="text-sm text-muted-foreground">Total URLs</p>
+                <p className="text-xl font-bold text-foreground">{sitemapStats.totalUrls}</p>
               </div>
               <div>
                 <p className="text-sm text-slate-600 dark:text-slate-400">Blog Posts</p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/Card';
@@ -25,13 +25,9 @@ export default function ContactInfoPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadContactInfo();
-  }, [router]);
-
-  async function loadContactInfo() {
+  const loadContactInfo = useCallback(async () => {
     try {
-      const data = await fetchAPI('/settings');
+      const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
       const contactData = data?.contactInfo; // Can be null, string, or object
       
       if (contactData) {
@@ -54,14 +50,19 @@ export default function ContactInfoPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadContactInfo();
+  }, [router, loadContactInfo]);
 
   async function handleSave() {
     setSaving(true);
     try {
       await fetchAPI('/settings', {
         method: 'PUT',
-        body: JSON.stringify({ contactInfo }) // Send as nested object
+        body: JSON.stringify({ contactInfo }),
+        redirectOn401: false // Send as nested object
       });
       success('Contact information saved successfully!');
     } catch (e: any) {
@@ -71,7 +72,7 @@ export default function ContactInfoPage() {
     }
   }
 
-  if (loading) return <div className="p-8 text-center text-slate-500">Loading...</div>;
+  if (loading) return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pt-6">
@@ -83,8 +84,8 @@ export default function ContactInfoPage() {
 
       <div className="flex justify-between items-center mb-6 px-1">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Contact Information</h1>
-            <p className="text-slate-500 dark:text-slate-400">Manage owner contact details and social media accounts.</p>
+            <h1 className="text-3xl font-bold text-foreground">Contact Information</h1>
+            <p className="text-muted-foreground">Manage owner contact details and social media accounts.</p>
           </div>
       </div>
 
@@ -95,7 +96,7 @@ export default function ContactInfoPage() {
           </CardHeader>
           <CardContent className="space-y-6">
                <div className="grid gap-2">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
                     <Phone size={16} /> Phone Number
                   </label>
                   <Input 
@@ -106,7 +107,7 @@ export default function ContactInfoPage() {
                </div>
 
                <div className="grid gap-2">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
                     <Mail size={16} /> Email Address
                   </label>
                   <Input 
@@ -118,7 +119,7 @@ export default function ContactInfoPage() {
                </div>
 
                <div className="grid gap-2">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
                     <MapPin size={16} /> Address
                   </label>
                   <Input 
@@ -137,7 +138,7 @@ export default function ContactInfoPage() {
           </CardHeader>
           <CardContent className="space-y-6">
                <div className="grid gap-2">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
                     <Facebook size={16} className="text-blue-600" /> Facebook
                   </label>
                   <Input 
@@ -148,7 +149,7 @@ export default function ContactInfoPage() {
                </div>
 
                <div className="grid gap-2">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
                     <Twitter size={16} className="text-blue-400" /> Twitter
                   </label>
                   <Input 

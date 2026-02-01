@@ -79,25 +79,35 @@ export function Navbar() {
   }, [settings]);
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm transition-all duration-200">
+    <nav 
+      className="sticky top-0 z-50 w-full border-b border-border bg-card shadow-elevation-1 transition-all duration-200"
+      role="navigation"
+      aria-label="Main navigation"
+    >
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <NavLink href="/" className="flex items-center gap-2 font-bold text-xl text-slate-900 dark:text-slate-100 hover:opacity-80 transition-opacity" onNavigate={router.push}>
-          <div className="bg-blue-600 dark:bg-blue-500 text-white p-1 rounded-lg">
-            <Newspaper size={20} />
+        <NavLink 
+          href="/" 
+          className="flex items-center gap-2 font-bold text-xl text-foreground hover:text-primary transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-md"
+          onNavigate={router.push}
+          ariaLabel="AI CMS - Home"
+        >
+          <div className="bg-primary text-primary-foreground p-1 rounded-lg shadow-elevation-1">
+            <Newspaper size={20} aria-hidden="true" />
           </div>
           <span>AI CMS</span>
         </NavLink>
         
-        <div className="hidden md:flex gap-8">
+        <div className="hidden md:flex gap-8" role="menubar" aria-label="Primary menu">
           {navLinks.map((link) => (
             <NavLink 
               key={link.href}
               href={link.href}
               onNavigate={router.push}
               className={cn(
-                "text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400",
-                pathname === link.href ? "text-blue-600 dark:text-blue-400" : "text-slate-600 dark:text-slate-400"
+                "text-sm font-medium transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-md px-2 py-1",
+                pathname === link.href ? "text-primary font-semibold" : "text-muted-foreground"
               )}
+              ariaLabel={link.label}
             >
               {link.label}
             </NavLink>
@@ -106,26 +116,43 @@ export function Navbar() {
 
         <div className="flex items-center gap-4">
           <NavLink href="/get-quote" onNavigate={router.push}>
-            <Button className="bg-orange-600 hover:bg-orange-700 text-white font-semibold">
+            <Button className="bg-orange-600 hover:bg-orange-700 text-white font-semibold" ariaLabel="Get a Quote">
               Get a Quote
             </Button>
           </NavLink>
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 hidden sm:block" />
+          <div className="w-px h-6 bg-border hidden sm:block" aria-hidden="true" />
           <ThemeToggle />
-          <NavLink
-            href="/dashboard"
-            aria-label="Admin Dashboard"
-            className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
-            onNavigate={(href) => {
-              if (!loading && !role) {
-                router.push(`/auth?next=${encodeURIComponent(href)}`);
-                return;
-              }
-              router.push(href);
-            }}
-          >
-            {isAdmin ? <LayoutDashboard size={20} className="text-blue-600 dark:text-blue-400" /> : <ShieldCheck size={20} />}
-          </NavLink>
+          
+          {/* Auth Buttons: Login/Sign Up or Dashboard */}
+          {loading ? (
+            <div className="flex items-center gap-2" role="status" aria-live="polite" aria-label="Loading user status">
+              <div className="h-9 w-16 bg-muted animate-pulse rounded" />
+              <div className="h-9 w-20 bg-muted animate-pulse rounded" />
+              <span className="sr-only">Loading...</span>
+            </div>
+          ) : role ? (
+            // User is logged in - show Dashboard button
+            <NavLink href="/dashboard" onNavigate={router.push}>
+              <Button variant="outline" className="flex items-center gap-2" ariaLabel="Go to Dashboard">
+                <LayoutDashboard size={16} aria-hidden="true" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </Button>
+            </NavLink>
+          ) : (
+            // User is not logged in - show Login and Sign Up buttons
+            <div className="flex items-center gap-2" role="group" aria-label="Authentication">
+              <NavLink href="/auth?mode=login" onNavigate={router.push}>
+                <Button variant="outline" className="px-4" ariaLabel="Login to your account">
+                  Login
+                </Button>
+              </NavLink>
+              <NavLink href="/auth?mode=signup" onNavigate={router.push}>
+                <Button className="px-4" ariaLabel="Sign up for an account">
+                  Sign Up
+                </Button>
+              </NavLink>
+            </div>
+          )}
         </div>
       </div>
     </nav>

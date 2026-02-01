@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -44,15 +44,11 @@ export default function NewPostPage() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newTagName, setNewTagName] = useState('');
 
-  useEffect(() => {
-    fetchCategoriesAndTags();
-  }, []);
-
-  const fetchCategoriesAndTags = async () => {
+  const fetchCategoriesAndTags = useCallback(async () => {
     try {
       const [categories, tags] = await Promise.all([
-        fetchAPI('/categories').catch(() => []),
-        fetchAPI('/blog/admin/tags').catch(() => []),
+        fetchAPI('/categories', { redirectOn401: false, cache: 'no-store' }).catch(() => []),
+        fetchAPI('/blog/admin/tags', { redirectOn401: false, cache: 'no-store' }).catch(() => []),
       ]);
       
       setAvailableCategories(Array.isArray(categories) ? categories : []);
@@ -63,7 +59,11 @@ export default function NewPostPage() {
       setAvailableCategories([]);
       setAvailableTags([]);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchCategoriesAndTags();
+  }, [fetchCategoriesAndTags]);
 
   const createNewCategory = async () => {
     if (!newCategoryName.trim()) return;
@@ -74,6 +74,8 @@ export default function NewPostPage() {
           name: newCategoryName,
           slug: newCategoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       if (newCat && newCat.id) {
         setAvailableCategories([...availableCategories, newCat]);
@@ -97,6 +99,8 @@ export default function NewPostPage() {
           name: newTagName,
           slug: newTagName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       if (newTag && newTag.id) {
         setAvailableTags([...availableTags, newTag]);
@@ -155,6 +159,8 @@ export default function NewPostPage() {
       const data = await fetchAPI('/media/upload', {
         method: 'POST',
         body: formData,
+        redirectOn401: false,
+        cache: 'no-store',
       });
 
       // Return full URL if relative, or use as-is if absolute
@@ -191,6 +197,8 @@ export default function NewPostPage() {
           ...formData,
           scheduledFor: formData.scheduledFor ? new Date(formData.scheduledFor).toISOString() : null,
         }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
 
       success('Post created successfully with auto-generated tags, SEO, and internal links!');

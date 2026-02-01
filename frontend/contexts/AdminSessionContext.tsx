@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { fetchAPI } from '@/lib/api';
 import { logoutEverywhere } from '@/lib/authClient';
 
@@ -30,56 +31,81 @@ const AdminSessionContext = createContext<AdminSessionContextType>({
 });
 
 export function AdminSessionProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<AdminUser | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async () => {
-    const profile = await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: true });
+    const profile = await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: false });
     const normalized = (profile as any)?.user || profile || {};
     const nextRole = normalized.role || null;
     setUser(normalized);
     setRole(nextRole);
-  }, []);
+  }, []); // STABLE: Empty deps - function never changes
 
   const refreshSession = useCallback(async () => {
     try {
-      await fetchAPI('/auth/refresh', { method: 'POST', cache: 'no-store', redirectOn401: true });
-      await loadProfile();
+      await fetchAPI('/auth/refresh', { method: 'POST', cache: 'no-store', redirectOn401: false });
+      const profile = await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: false });
+      const normalized = (profile as any)?.user || profile || {};
+      const nextRole = normalized.role || null;
+      setUser(normalized);
+      setRole(nextRole);
     } catch (err) {
       setUser(null);
       setRole(null);
       throw err;
     }
-  }, [loadProfile]);
+  }, []); // STABLE: No deps needed
 
   const logout = useCallback(async () => {
-    await logoutEverywhere();
-    setUser(null);
-    setRole(null);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('user_role');
+    try {
+      await logoutEverywhere();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Clear state regardless of API call result
+      setUser(null);
+      setRole(null);
+      
+      // Clear local storage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('admin_session');
+      }
+      
+      // Force redirect to auth page after logout
+      if (typeof window !== 'undefined') {
+        router.replace('/auth?mode=login');
+      }
     }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimeout: NodeJS.Timeout | null = null;
+    
     (async () => {
       try {
         await loadProfile();
-      } catch {
+      } catch (err) {
         if (!cancelled) {
           setUser(null);
           setRole(null);
+          // Don't retry indefinitely - just set loading to false
+          console.debug('[AdminSession] Profile load failed:', err);
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
+    
     return () => {
       cancelled = true;
+      if (retryTimeout) clearTimeout(retryTimeout);
     };
-  }, [loadProfile]);
+  }, []); // STABLE: Only run once on mount
 
   return (
     <AdminSessionContext.Provider value={{ user, role, loading, refreshSession, logout }}>

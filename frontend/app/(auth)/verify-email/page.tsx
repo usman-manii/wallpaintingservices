@@ -26,7 +26,8 @@ function VerifyEmailContent() {
     if (id) {
       setFormData(prev => ({ ...prev, requestId: id }));
     }
-  }, [searchParams]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -105,11 +106,11 @@ function VerifyEmailContent() {
 
 export default function VerifyEmailPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Suspense fallback={
         <div className="flex flex-col items-center gap-2">
-           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-           <p className="text-slate-500">Loading...</p>
+           <Loader2 className="h-8 w-8 animate-spin text-primary" />
+           <p className="text-muted-foreground">Loading...</p>
         </div>
       }>
         <VerifyEmailContent />

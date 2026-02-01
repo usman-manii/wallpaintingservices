@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -36,13 +36,9 @@ export default function WidgetsPage() {
   const [editingWidget, setEditingWidget] = useState<Widget | null>(null);
   const [widgetSettings, setWidgetSettings] = useState<any>({});
 
-  useEffect(() => {
-    loadWidgets();
-  }, []);
-
-  async function loadWidgets() {
+  const loadWidgets = useCallback(async () => {
     try {
-      const data = await fetchAPI('/settings');
+      const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
       if (data?.widgetConfig?.widgets) {
         const savedWidgets = data.widgetConfig.widgets;
         setWidgets(availableWidgets.map(w => {
@@ -55,13 +51,19 @@ export default function WidgetsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadWidgets();
+  }, [loadWidgets]);
 
   async function handleSave() {
     try {
       await fetchAPI('/settings', {
         method: 'PUT',
-        body: JSON.stringify({ widgetConfig: { widgets } })
+        body: JSON.stringify({ widgetConfig: { widgets } }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       success('Widget configuration saved successfully!');
     } catch (e: any) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { 
@@ -102,27 +102,10 @@ export default function SEOManagementPage() {
   const [interlinkingError, setInterlinkingError] = useState('');
   const [interlinkingSuccess, setInterlinkingSuccess] = useState('');
 
-  useEffect(() => {
-    if (activeTab === 'audit') {
-      fetchSiteAudit();
-    } else if (activeTab === 'tools') {
-      loadStats();
-    } else if (activeTab === 'interlinking') {
-      loadInterlinkingData();
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab === 'interlinking') {
-      loadInterlinkingData();
-    }
-  }, [interlinkingPage]);
-
-  // SEO Audit Functions
-  const fetchSiteAudit = async () => {
+  const fetchSiteAudit = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchAPI('/blog/admin/seo/audit-site');
+      const data = await fetchAPI('/blog/admin/seo/audit-site', { redirectOn401: false, cache: 'no-store' });
       setSiteAudit(data);
     } catch (error: any) {
       console.error('Error fetching site audit:', error);
@@ -130,13 +113,13 @@ export default function SEOManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showError]);
 
-  const fetchPostAudit = async (postId: string) => {
+  const fetchPostAudit = useCallback(async (postId: string) => {
     setLoading(true);
     setSelectedPost(postId);
     try {
-      const data = await fetchAPI(`/blog/admin/seo/audit/${postId}`);
+      const data = await fetchAPI(`/blog/admin/seo/audit/${postId}`, { redirectOn401: false, cache: 'no-store' });
       setPostAudit(data);
     } catch (error: any) {
       console.error('Error fetching post audit:', error);
@@ -144,13 +127,12 @@ export default function SEOManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showError]);
 
-  // SEO Tools Functions
-  async function loadStats() {
+  const loadStats = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchAPI('/blog/seo/stats');
+      const data = await fetchAPI('/blog/seo/stats', { redirectOn401: false, cache: 'no-store' });
       setStats(data);
     } catch (error: any) {
       console.error('Failed to load stats:', error);
@@ -158,7 +140,7 @@ export default function SEOManagementPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [showError]);
 
   async function handleEnhanceAll() {
     confirm(
@@ -167,7 +149,7 @@ export default function SEOManagementPage() {
       async () => {
         try {
           setEnhancing(true);
-          const data = await fetchAPI('/blog/seo/enhance-all', { method: 'POST' });
+          const data = await fetchAPI('/blog/seo/enhance-all', { method: 'POST', redirectOn401: false, cache: 'no-store' });
           success(`Enhanced ${data.updated} posts successfully!`);
           await loadStats();
         } catch (error: any) {
@@ -180,29 +162,31 @@ export default function SEOManagementPage() {
   }
 
   // Interlinking Functions
-  const loadInterlinkingData = async () => {
+  const loadInterlinkingData = useCallback(async () => {
     try {
       setLoading(true);
 
-      // Fetch Stats
-      const statsRes = await fetch(`${API_URL}/blog/ai/interlink/stats`, { credentials: 'include' });
-      if (statsRes.ok) {
-        setInterlinkingStats(await statsRes.json());
-      }
+      // Fetch Stats using fetchAPI for proper session/cache handling
+      const statsData = await fetchAPI('/blog/ai/interlink/stats', { 
+        redirectOn401: false, 
+        cache: 'no-store' 
+      });
+      setInterlinkingStats(statsData);
 
-      // Fetch Links List
-      const listRes = await fetch(`${API_URL}/blog/ai/interlink/list?page=${interlinkingPage}&limit=20`, { credentials: 'include' });
-      if (listRes.ok) {
-        const data = await listRes.json();
-        setInterlinkingLinks(data.links);
-        setInterlinkingTotalPages(data.totalPages);
-      }
-    } catch (err) {
+      // Fetch Links List using fetchAPI
+      const listData = await fetchAPI(`/blog/ai/interlink/list?page=${interlinkingPage}&limit=20`, { 
+        redirectOn401: false, 
+        cache: 'no-store' 
+      });
+      setInterlinkingLinks(listData.links || []);
+      setInterlinkingTotalPages(listData.totalPages || 1);
+    } catch (err: any) {
+      console.error('Error loading interlinking data:', err);
       setInterlinkingError('Failed to load interlinking data');
     } finally {
       setLoading(false);
     }
-  };
+  }, [interlinkingPage]);
 
   const handleRunInterlinking = async () => {
     try {
@@ -210,25 +194,38 @@ export default function SEOManagementPage() {
       setInterlinkingError('');
       setInterlinkingSuccess('');
       
-      const res = await fetch(`${API_URL}/blog/ai/interlink`, {
+      const data = await fetchAPI('/blog/ai/interlink', {
         method: 'POST',
-        credentials: 'include',
+        redirectOn401: false,
+        cache: 'no-store',
       });
-
-      const data = await res.json();
       
-      if (res.ok) {
-        setInterlinkingSuccess(data.message);
-        loadInterlinkingData(); // Refresh data
-      } else {
-        setInterlinkingError(data.message || 'Failed to run interlinking');
-      }
-    } catch (err) {
-      setInterlinkingError('An error occurred while running interlinking');
+      setInterlinkingSuccess(data.message || 'Interlinking process completed');
+      loadInterlinkingData(); // Refresh data
+    } catch (err: any) {
+      console.error('Error running interlinking:', err);
+      setInterlinkingError(err.message || 'An error occurred while running interlinking');
     } finally {
       setInterlinkingRunning(false);
     }
   };
+
+  // useEffect hooks - placed after all callback definitions to ensure proper references
+  useEffect(() => {
+    if (activeTab === 'audit') {
+      fetchSiteAudit();
+    } else if (activeTab === 'tools') {
+      loadStats();
+    } else if (activeTab === 'interlinking') {
+      loadInterlinkingData();
+    }
+  }, [activeTab, fetchSiteAudit, loadStats, loadInterlinkingData]);
+
+  useEffect(() => {
+    if (activeTab === 'interlinking') {
+      loadInterlinkingData();
+    }
+  }, [interlinkingPage, activeTab, loadInterlinkingData]);
 
   const getScoreColor = (score: number) => {
     if (score >= 90) return 'text-green-600 dark:text-green-400';

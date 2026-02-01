@@ -123,18 +123,8 @@ export default async function Home() {
     <div className="container mx-auto px-4 py-12">
       {/* Blog Header / Hero */}
       <div className="mb-12 text-center max-w-3xl mx-auto">
-        <h1 className="text-4xl font-bold text-slate-900 mb-4">{settings.siteName}</h1>
-        <p className="text-xl text-slate-600">{settings.description}</p>
-        <div className="mt-6 flex items-center justify-center gap-4">
-          <Link href="/auth?mode=login">
-            <Button className="px-6">Login</Button>
-          </Link>
-          <Link href="/auth?mode=signup">
-            <Button variant="outline" className="px-6">
-              Sign Up
-            </Button>
-          </Link>
-        </div>
+        <h1 className="text-4xl font-bold text-foreground mb-4">{settings.siteName}</h1>
+        <p className="text-xl text-muted-foreground">{settings.description}</p>
       </div>
 
       <div className={`grid gap-8 ${isDualColumn ? 'lg:grid-cols-3' : 'grid-cols-1 max-w-4xl mx-auto'}`}>
@@ -143,9 +133,9 @@ export default async function Home() {
         <div className={`${isDualColumn ? 'lg:col-span-2' : ''} space-y-8`}>
           {posts.length > 0 ? (
             posts.map(post => (
-              <article key={post.id} className="flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+              <article key={post.id} className="flex flex-col bg-card rounded-xl shadow-elevation-1 border border-border overflow-hidden hover:shadow-elevation-2 transition-shadow">
                 {post.featuredImage && (
-                  <div className="h-64 sm:h-80 w-full relative overflow-hidden bg-slate-100">
+                  <div className="h-64 sm:h-80 w-full relative overflow-hidden bg-muted">
                      {/* eslint-disable-next-line @next/next/no-img-element */}
                      <img 
                         src={post.featuredImage} 
@@ -155,7 +145,7 @@ export default async function Home() {
                   </div>
                 )}
                 <div className="p-6 sm:p-8">
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500 mb-4">
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-4">
                      <span className="flex items-center gap-1">
                         <Calendar className="w-4 h-4" />
                         {new Date(post.publishedAt).toLocaleDateString()}
@@ -167,7 +157,7 @@ export default async function Home() {
                         </span>
                      )}
                      {post.categories && post.categories.length > 0 && (
-                        <span className="flex items-center gap-1 text-blue-600 font-medium">
+                        <span className="flex items-center gap-1 text-primary font-medium">
                             <Tag className="w-4 h-4" />
                             {post.categories[0].name}
                         </span>
@@ -175,12 +165,12 @@ export default async function Home() {
                   </div>
 
                   <Link href={`/blog/${post.slug}`} className="block group">
-                    <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3 group-hover:text-blue-600 transition-colors">
+                    <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-3 group-hover:text-primary transition-colors">
                       {post.title}
                     </h2>
                   </Link>
 
-                  <p className="text-slate-600 leading-relaxed mb-6 line-clamp-3">
+                  <p className="text-muted-foreground leading-relaxed mb-6 line-clamp-3">
                     {post.excerpt}
                   </p>
 
@@ -193,7 +183,7 @@ export default async function Home() {
               </article>
             ))
           ) : (
-             <div className="bg-slate-50 border border-dashed rounded-xl p-12 text-center text-slate-500">
+             <div className="bg-muted border border-dashed rounded-xl p-12 text-center text-muted-foreground">
                 <p className="text-lg">No updates published yet.</p>
              </div>
           )}
@@ -209,9 +199,9 @@ export default async function Home() {
                  <UpcomingPostsWidget />
                  
                  {/* Ad / Promo Placeholder */}
-                 <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-6 text-white text-center shadow-lg border border-slate-700/50">
-                    <h3 className="font-bold text-xl mb-2 text-primary-100">Need Painting?</h3>
-                    <p className="mb-4 text-slate-300 text-sm">Get the best wall painting services in UAE.</p>
+                 <div className="bg-sidebar rounded-xl p-6 text-sidebar-foreground text-center shadow-lg border border-border">
+                    <h3 className="font-bold text-xl mb-2">Need Painting?</h3>
+                    <p className="mb-4 text-muted-foreground text-sm">Get the best wall painting services in UAE.</p>
                     <Link href="/get-quote">
                         <Button variant="secondary" size="sm" className="w-full font-medium hover:bg-emerald-500 hover:text-white transition-colors">
                             Get Quote
@@ -236,7 +226,7 @@ function SearchBar() {
                         placeholder="Search articles..." 
                         className="w-full pl-4 pr-10 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
                     />
-                    <button type="submit" className="absolute right-2 top-2.5 text-slate-400 hover:text-blue-500">
+                    <button type="submit" className="absolute right-2 top-2.5 text-muted-foreground hover:text-primary">
                         <ArrowRight className="w-5 h-5" />
                     </button>
                 </form>

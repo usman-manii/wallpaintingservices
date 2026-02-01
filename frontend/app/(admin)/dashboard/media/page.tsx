@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -69,11 +69,7 @@ export default function MediaManagerPage() {
   const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchMedia();
-  }, [folderFilter]);
-
-  const fetchMedia = async () => {
+  const fetchMedia = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -81,7 +77,7 @@ export default function MediaManagerPage() {
       params.append('limit', '1000'); // Increased limit to show all media
       params.append('page', '1');
       
-      const data = await fetchAPI(`/media?${params.toString()}`);
+      const data = await fetchAPI(`/media?${params.toString()}`, { redirectOn401: false, cache: 'no-store' });
       // Handle paginated response from backend
       const files = Array.isArray(data) ? data : (data?.items || data?.files || []);
       setMedia(files);
@@ -98,7 +94,11 @@ export default function MediaManagerPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [folderFilter]);
+
+  useEffect(() => {
+    fetchMedia();
+  }, [fetchMedia]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -125,6 +125,8 @@ export default function MediaManagerPage() {
       const data = await fetchAPI('/media/upload', {
         method: 'POST',
         body: formData,
+        redirectOn401: false,
+        cache: 'no-store',
       });
 
       success('File uploaded successfully!');
@@ -153,6 +155,8 @@ export default function MediaManagerPage() {
           url: urlInput,
           folder: folderFilter !== 'all' ? folderFilter : 'uploads',
         }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
 
       success('File uploaded from URL successfully!');
@@ -173,7 +177,7 @@ export default function MediaManagerPage() {
       `Are you sure you want to delete "${filename}"? This action cannot be undone.`,
       async () => {
         try {
-          await fetchAPI(`/media/${mediaId}`, { method: 'DELETE' });
+          await fetchAPI(`/media/${mediaId}`, { method: 'DELETE', redirectOn401: false, cache: 'no-store' });
           success('File deleted successfully');
           fetchMedia();
         } catch (error: any) {
@@ -200,6 +204,7 @@ export default function MediaManagerPage() {
       await fetchAPI(`/media/${editingMedia.id}`, {
         method: 'PATCH',
         body: JSON.stringify(editForm),
+        redirectOn401: false,
       });
 
       success('Media updated successfully');

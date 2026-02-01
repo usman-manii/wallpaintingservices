@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
@@ -53,7 +53,7 @@ export default function PagesManagementPage() {
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [showFilters, setShowFilters] = useState(false);
 
-  const fetchPages = async () => {
+  const fetchPages = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -65,7 +65,7 @@ export default function PagesManagementPage() {
       console.log('📡 API endpoint:', endpoint);
       console.log('📡 Full URL:', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${endpoint}`);
       
-      const data = await fetchAPI(endpoint);
+      const data = await fetchAPI(endpoint, { redirectOn401: false, cache: 'no-store' });
       
       console.log('📦 Raw API response:', data);
       console.log('📦 Response type:', typeof data, 'Is Array:', Array.isArray(data));
@@ -128,11 +128,11 @@ export default function PagesManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, typeFilter]);
 
   useEffect(() => {
     fetchPages();
-  }, [statusFilter, typeFilter]);
+  }, [fetchPages]);
 
   useEffect(() => {
     const onPagesChanged = (event?: any) => {
@@ -151,7 +151,7 @@ export default function PagesManagementPage() {
       'Are you sure you want to delete this page?',
       async () => {
         try {
-          await fetchAPI(`/pages/${id}`, { method: 'DELETE' });
+          await fetchAPI(`/pages/${id}`, { method: 'DELETE', redirectOn401: false, cache: 'no-store' });
           fetchPages();
           success('Page deleted');
         } catch (error: any) {
@@ -164,7 +164,7 @@ export default function PagesManagementPage() {
 
   const handleDuplicate = async (id: string) => {
     try {
-      await fetchAPI(`/pages/${id}/duplicate`, { method: 'POST' });
+      await fetchAPI(`/pages/${id}/duplicate`, { method: 'POST', redirectOn401: false, cache: 'no-store' });
       fetchPages();
       success('Page duplicated successfully!');
     } catch (error: any) {

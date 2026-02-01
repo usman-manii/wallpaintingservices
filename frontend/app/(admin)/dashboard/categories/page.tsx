@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -44,13 +44,9 @@ export default function CategoriesPage() {
     parentId: '',
   });
 
-  useEffect(() => {
-    fetchCategories();
-  }, []);
-
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
-      const data = await fetchAPI('/categories');
+      const data = await fetchAPI('/categories', { redirectOn401: false, cache: 'no-store' });
       setCategories(Array.isArray(data) ? data : []);
     } catch (error: any) {
       console.error('Error fetching categories:', error);
@@ -59,7 +55,11 @@ export default function CategoriesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +72,8 @@ export default function CategoriesPage() {
       await fetchAPI(url, {
         method: editingCategory ? 'PUT' : 'POST',
         body: JSON.stringify(payload),
+        redirectOn401: false,
+        cache: 'no-store',
       });
 
       success(editingCategory ? 'Category updated successfully' : 'Category created successfully');
@@ -105,6 +107,8 @@ export default function CategoriesPage() {
         try {
           await fetchAPI(`/categories/${id}`, {
             method: 'DELETE',
+            redirectOn401: false,
+            cache: 'no-store',
           });
           success('Category deleted successfully');
           fetchCategories();

@@ -1,7 +1,7 @@
 // frontend/app/(admin)/dashboard/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -19,20 +19,36 @@ import { Plus, Settings, LogOut, CheckCircle, RefreshCw, FileText } from 'lucide
   const [stats, setStats] = useState({ totalDocs: 0, pending: 0, published: 0 });
 
   useEffect(() => {
-      setIsAuthenticated(true);
-      loadDrafts();
-    }, []);
-
-  async function loadDrafts() {
+    let mounted = true;
+    
+    async function checkAuth() {
       try {
-        const data = await fetchAPI('/blog?take=5');
+        await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: false });
+        if (mounted) {
+          setIsAuthenticated(true);
+          loadDrafts();
+        }
+      } catch {
+        if (mounted) {
+          router.push('/auth?next=' + encodeURIComponent('/dashboard'));
+        }
+      }
+    }
+    
+    checkAuth();
+    return () => { mounted = false; };
+  }, []); // Empty deps - only run once on mount
+
+  const loadDrafts = useCallback(async () => {
+      try {
+        const data = await fetchAPI('/blog?take=5', { redirectOn401: false, cache: 'no-store' });
         setPosts(data);
         // Mock stats for now, real app would have /stats endpoint
         setStats({ totalDocs: 142, pending: 3, published: data.length });
       } catch (e) {
           console.error("Failed to load posts", e);
       }
-  }
+  }, []);
 
   async function handleGenerate() {
     if (!topic) return;
@@ -42,7 +58,8 @@ import { Plus, Settings, LogOut, CheckCircle, RefreshCw, FileText } from 'lucide
     try {
       await fetchAPI('/queue/generate', {
           method: 'POST',
-          body: JSON.stringify({ topic }) 
+          body: JSON.stringify({ topic }),
+          redirectOn401: false
       });
 
       setMessage(`✅ Job queued for "${topic}".`);

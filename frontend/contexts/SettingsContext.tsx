@@ -1,11 +1,42 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { logger } from '@/lib/logger';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface PublicSettings {
-  [key: string]: any;
+  siteName?: string;
+  description?: string;
+  logo?: string | null;
+  darkMode?: boolean;
+  captchaType?: string;
+  recaptchaV2SiteKey?: string | null;
+  recaptchaV3SiteKey?: string | null;
+  homePageLayout?: string;
+  homePageId?: string | null;
+  blogPageId?: string | null;
+  topBarEnabled?: boolean;
+  googleSiteVerification?: string | null;
+  bingSiteVerification?: string | null;
+  yandexSiteVerification?: string | null;
+  pinterestVerification?: string | null;
+  facebookDomainVerification?: string | null;
+  customVerificationTag?: string | null;
+  menuStructure?: {
+    menus?: Array<{
+      id: string;
+      name: string;
+      locations?: { primary?: boolean; footer?: boolean };
+      items: Array<{
+        label?: string;
+        url?: string;
+        order?: number;
+        [key: string]: unknown;
+      }>;
+    }>;
+  } | null;
+  [key: string]: unknown;
 }
 
 interface SettingsContextValue {
@@ -50,7 +81,7 @@ async function fetchSettingsSingleton(): Promise<PublicSettings> {
       cacheTimestamp = now;
       return data;
     } catch (err) {
-      console.error('Failed to load public settings:', err);
+      logger.error('Failed to load public settings', err as Error);
       throw err;
     } finally {
       pendingFetch = null;
@@ -64,8 +95,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<PublicSettings | null>(settingsCache);
   const [loading, setLoading] = useState(!settingsCache);
   const [error, setError] = useState<Error | null>(null);
+  const fetchedRef = useRef(false); // Prevent double fetch in Strict Mode
 
   useEffect(() => {
+    // CRITICAL: Prevent double fetches in React StrictMode
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    
     let mounted = true;
 
     fetchSettingsSingleton()

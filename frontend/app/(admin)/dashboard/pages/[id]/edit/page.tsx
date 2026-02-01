@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -59,16 +59,10 @@ export default function PageEditPage() {
     setFormData(prev => ({ ...prev, slug: cleaned }));
   };
 
-  useEffect(() => {
-    if (!isNew) {
-      fetchPage();
-    }
-  }, [pageId, isNew]);
-
-  const fetchPage = async () => {
+  const fetchPage = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchAPI(`/pages/${pageId}`);
+      const data = await fetchAPI(`/pages/${pageId}`, { redirectOn401: false, cache: 'no-store' });
       if (data) {
         // Extract content from page builder format or use simple content
         let content = '';
@@ -103,7 +97,13 @@ export default function PageEditPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pageId]);
+
+  useEffect(() => {
+    if (!isNew) {
+      fetchPage();
+    }
+  }, [pageId, isNew, fetchPage]);
 
   const handleEditorChange = (html: string, text: string) => {
     setFormData(prev => ({ ...prev, content: html }));
@@ -116,6 +116,8 @@ export default function PageEditPage() {
       const response = await fetchAPI('/media/upload', {
         method: 'POST',
         body: formData,
+        redirectOn401: false,
+        cache: 'no-store',
       });
       return response.url || response.path || '';
     } catch (error: any) {
@@ -170,6 +172,8 @@ export default function PageEditPage() {
         const newPage = await fetchAPI('/pages', {
           method: 'POST',
           body: JSON.stringify(pageData),
+          redirectOn401: false,
+          cache: 'no-store',
         });
         success(publish ? 'Page published successfully!' : 'Page saved as draft');
         router.push(`/dashboard/pages/${newPage.id}/edit`);
@@ -177,6 +181,8 @@ export default function PageEditPage() {
         await fetchAPI(`/pages/${pageId}`, {
           method: 'PUT',
           body: JSON.stringify(pageData),
+          redirectOn401: false,
+          cache: 'no-store',
         });
         success(publish ? 'Page published successfully!' : 'Page saved');
         fetchPage();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -28,20 +28,20 @@ export default function AIContentPage() {
   const [message, setMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'generate' | 'settings'>('generate');
 
-  useEffect(() => {
-    if (activeTab === 'generate') {
-      fetchJobs();
-    }
-  }, [activeTab]);
-
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
     try {
-      const data = await fetchAPI('/queue/jobs');
+      const data = await fetchAPI('/queue/jobs', { redirectOn401: false, cache: 'no-store' });
       setJobs(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching jobs:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'generate') {
+      fetchJobs();
+    }
+  }, [activeTab, fetchJobs]);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +59,8 @@ export default function AIContentPage() {
           tone,
           length,
         }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       setMessage('✅ Content generation started! Check the queue below.');
       setTopic('');

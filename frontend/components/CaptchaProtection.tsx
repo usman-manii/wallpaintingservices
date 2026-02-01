@@ -223,9 +223,9 @@ export default function CaptchaProtection({
 
   if (status === 'fallback' && captchaType === 'v2') {
     return (
-      <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900">
+      <div className="p-4 border border-border rounded-lg bg-card">
         <div className="mb-3">
-          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+          <span className="text-sm font-semibold text-foreground">
             Security Verification Required
           </span>
         </div>
@@ -242,19 +242,19 @@ export default function CaptchaProtection({
 
   if (status === 'fallback' && captchaType === 'custom' && customChallenge) {
     return (
-      <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900">
+      <div className="p-4 border border-border rounded-lg bg-muted">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+          <span className="text-sm font-semibold text-foreground">
             Security Challenge
           </span>
           <RefreshCw 
             size={16} 
-            className="text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" 
+            className="text-muted-foreground cursor-pointer hover:text-primary transition-colors" 
             onClick={loadCustomChallenge} 
           />
         </div>
         <div className="space-y-3">
-          <div className="bg-white dark:bg-slate-800 p-3 rounded border border-slate-300 dark:border-slate-600">
+          <div className="bg-card p-3 rounded border border-border">
             <img 
               src={customChallenge.image} 
               alt="Captcha" 
@@ -265,7 +265,7 @@ export default function CaptchaProtection({
             <input 
               type="text" 
               placeholder="Enter the text above"
-              className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-3 py-2 border border-input rounded text-sm bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               value={customAnswer}
               onChange={(e) => setCustomAnswer(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && verifyCustomChallenge()}
@@ -291,7 +291,7 @@ export default function CaptchaProtection({
 
   if (status === 'verifying' || status === 'loading') {
     return (
-      <div className="flex items-center justify-center gap-2 p-3 text-sm text-slate-600 dark:text-slate-400">
+      <div className="flex items-center justify-center gap-2 p-3 text-sm text-muted-foreground">
         <RefreshCw size={16} className="animate-spin" />
         <span>Verifying security...</span>
       </div>
@@ -311,7 +311,7 @@ export default function CaptchaProtection({
         <ShieldCheck size={16} />
         Verify Security
       </Button>
-      <p className="text-[10px] text-center text-slate-400 dark:text-slate-500 mt-1">
+      <p className="text-[10px] text-center text-muted-foreground mt-1">
         Protected by reCAPTCHA
       </p>
     </div>

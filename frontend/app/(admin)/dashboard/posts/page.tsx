@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -47,19 +47,14 @@ export default function PostsPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('latest');
   const [authors, setAuthors] = useState<Array<{ id: string; name: string }>>([]);
 
-  useEffect(() => {
-    fetchPosts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     setLoading(true);
     try {
       // Always load the full admin post list once; filters are applied client-side
       const params = new URLSearchParams();
       params.append('take', '1000');
 
-      const data = await fetchAPI(`/blog/admin/posts?${params.toString()}&_=${Date.now()}`);
+      const data = await fetchAPI(`/blog/admin/posts?${params.toString()}&_=${Date.now()}`, { redirectOn401: false, cache: 'no-store' });
 
       // Validate that data is an array
       if (!Array.isArray(data)) {
@@ -92,7 +87,11 @@ export default function PostsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
 
   // NOTE: We no longer refetch on filter changes; filters are applied client-side
 
@@ -105,6 +104,8 @@ export default function PostsPage() {
           try {
             await fetchAPI(`/blog/${id}`, {
               method: 'DELETE',
+              redirectOn401: false,
+              cache: 'no-store',
             });
             success('Post deleted successfully');
             fetchPosts();
@@ -300,7 +301,7 @@ export default function PostsPage() {
             : `You don't have any ${filterStatus.toLowerCase()} posts at the moment.`}
           action={{
             label: 'Create Your First Post',
-            onClick: () => window.location.href = '/dashboard/posts/new',
+            onClick: () => router.push('/dashboard/posts/new'),
             icon: <Plus className="w-4 h-4" />
           }}
         />

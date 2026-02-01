@@ -39,7 +39,8 @@ export default function AuthPage() {
     if (modeFromUrl === 'login' || modeFromUrl === 'signup') {
       setMode(modeFromUrl);
     }
-  }, [searchParams]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount - searchParams is read from initial value
 
   const resetCaptcha = () => {
     setCaptchaVerified(false);
@@ -160,13 +161,13 @@ export default function AuthPage() {
   const handleSubmit = mode === 'login' ? handleLogin : handleRegister;
 
   return (
-    <div className="flex bg-slate-50 min-h-[80vh] items-center justify-center py-8">
+    <div className="flex bg-background min-h-[80vh] items-center justify-center py-8">
       <div className="w-full max-w-md mx-auto px-4">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-slate-900">
+          <h1 className="text-3xl font-bold text-foreground">
             {mode === 'login' ? 'Welcome Back' : 'Create Account'}
           </h1>
-          <p className="text-slate-500 mt-2">
+          <p className="text-muted-foreground mt-2">
             {mode === 'login' 
               ? 'Sign in to manage your content' 
               : 'Join us to start managing your content'}
@@ -191,7 +192,7 @@ export default function AuthPage() {
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="relative">
-                      <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                      <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                       <Input
                         type="text"
                         placeholder="First name"
@@ -202,7 +203,7 @@ export default function AuthPage() {
                       />
                     </div>
                     <div className="relative">
-                      <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                      <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                       <Input
                         type="text"
                         placeholder="Last name"
@@ -214,7 +215,7 @@ export default function AuthPage() {
                   </div>
                   
                   <div className="relative">
-                    <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                    <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                     <Input
                       type="text"
                       placeholder="Username"
@@ -227,7 +228,7 @@ export default function AuthPage() {
               )}
               
               <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="email"
                   placeholder="name@example.com"
@@ -239,7 +240,7 @@ export default function AuthPage() {
               </div>
               
               <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="password"
                   placeholder="••••••••"
@@ -273,14 +274,14 @@ export default function AuthPage() {
               </Button>
             </form>
 
-            <div className="mt-4 text-center text-sm text-slate-600">
+            <div className="mt-4 text-center text-sm text-muted-foreground">
               {mode === 'login' ? (
                 <p>
                   Don't have an account?{' '}
                   <button
                     type="button"
                     onClick={switchMode}
-                    className="text-blue-600 hover:text-blue-700 font-medium"
+                    className="text-primary hover:text-primary/80 font-medium focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
                   >
                     Sign up
                   </button>
@@ -291,7 +292,7 @@ export default function AuthPage() {
                   <button
                     type="button"
                     onClick={switchMode}
-                    className="text-blue-600 hover:text-blue-700 font-medium"
+                    className="text-primary hover:text-primary/80 font-medium focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
                   >
                     Sign in
                   </button>
@@ -299,16 +300,16 @@ export default function AuthPage() {
               )}
             </div>
 
-            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-600">
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-muted-foreground">
               <Link
                 href="/forgot-password"
-                className="text-center border border-slate-200 dark:border-slate-700 rounded-lg py-2 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+                className="text-center border border-border rounded-lg py-2 hover:border-primary hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
               >
                 Forgot password
               </Link>
               <Link
                 href="/reset-password"
-                className="text-center border border-slate-200 dark:border-slate-700 rounded-lg py-2 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+                className="text-center border border-border rounded-lg py-2 hover:border-primary hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
               >
                 Reset with token
               </Link>

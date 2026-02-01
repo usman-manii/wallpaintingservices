@@ -26,7 +26,7 @@ export default function ProfilePage() {
 
     async function fetchProfile() {
         try {
-            const data = await fetchAPI('/auth/profile');
+            const data = await fetchAPI('/auth/profile', { redirectOn401: false });
             setProfile(data);
         } catch (err) {
             console.error('Failed to load profile', err);
@@ -42,7 +42,7 @@ export default function ProfilePage() {
 
         try {
              // Removed mock, use real endpoint
-             await fetchAPI('/auth/profile', { method: 'PUT', body: JSON.stringify(profile) });
+             await fetchAPI('/auth/profile', { method: 'PUT', body: JSON.stringify(profile), redirectOn401: false });
              setMessage('Profile updated successfully');
              // Refresh profile to get updated data (e.g. formatting)
              fetchProfile();
@@ -80,7 +80,8 @@ export default function ProfilePage() {
                const res = await fetchAPI('/auth/email-change/request', {
                    method: 'POST',
                    headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({ newEmail })
+                   body: JSON.stringify({ newEmail }),
+                   redirectOn401: false
                });
                success('Email change requested. Please check your inbox for verification codes.');
                setNewEmailInput('');
@@ -110,8 +111,8 @@ export default function ProfilePage() {
                 {/* User Card */}
                 <Card className="md:col-span-1">
                     <CardContent className="pt-6 flex flex-col items-center text-center">
-                        <div className="w-24 h-24 bg-slate-200 rounded-full flex items-center justify-center mb-4">
-                            <span className="text-4xl text-slate-500">
+                        <div className="w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
+                            <span className="text-4xl text-muted-foreground">
                                 {(profile.username || 'U')[0].toUpperCase()}
                             </span>
                         </div>
@@ -119,7 +120,7 @@ export default function ProfilePage() {
                         <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full mt-2 uppercase">
                             {profile.role}
                         </span>
-                        <p className="text-sm text-slate-500 mt-4">
+                        <p className="text-sm text-muted-foreground mt-4">
                             {profile.email} 
                             {profile.isEmailVerified && <span className="text-green-500 ml-1">✓</span>}
                         </p>
@@ -176,7 +177,7 @@ export default function ProfilePage() {
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Website</label>
                                 <div className="flex items-center gap-2">
-                                    <Globe size={16} className="text-slate-500" />
+                                    <Globe size={16} className="text-muted-foreground" />
                                     <Input 
                                         value={profile.website || ''} 
                                         onChange={e => setProfile({...profile, website: e.target.value})}

@@ -40,7 +40,7 @@ export function TopBar() {
   }
 
   // Don't render if top bar is disabled or no contact info
-  if (!settings.topBarEnabled) {
+  if (!settings || !settings.topBarEnabled) {
     return null;
   }
 

@@ -156,7 +156,7 @@ export default function AISettings() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">API Key</label>
                   <div className="relative">
-                    <Key className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Key className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input 
                       type="password"
                       placeholder={`Enter ${provider.name} API Key`}
@@ -171,7 +171,7 @@ export default function AISettings() {
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Default Model</label>
                     <select 
-                      className="w-full px-3 py-2 border rounded-md dark:bg-slate-900 border-slate-300 dark:border-slate-700"
+                      className="w-full px-3 py-2 border rounded-md bg-input border-border text-foreground focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                       value={provider.defaultModel}
                       onChange={(e) => updateProvider(provider.id, { defaultModel: e.target.value })}
                     >

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -98,6 +98,7 @@ export function useSidebar() {
 
 export default function AdminSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { role, logout } = useAdminSession();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -120,9 +121,15 @@ export default function AdminSidebar() {
   }, [pathname]);
 
   const handleLogout = async () => {
-    await logout();
-    if (typeof window !== 'undefined') {
-      window.location.href = '/auth';
+    try {
+      // The logout function in AdminSessionContext will handle the redirect
+      await logout();
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Fallback redirect if logout fails
+      if (typeof window !== 'undefined') {
+        router.replace('/auth?mode=login');
+      }
     }
   };
 
@@ -141,28 +148,28 @@ export default function AdminSidebar() {
       {/* Mobile menu button */}
       <button
         onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-lg hover:bg-slate-50 transition-colors"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-card rounded-lg shadow-elevation-2 hover:bg-muted transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
         aria-label="Toggle menu"
       >
-        {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        {isMobileMenuOpen ? <X size={24} className="text-foreground" /> : <Menu size={24} className="text-foreground" />}
       </button>
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-screen bg-slate-900 dark:bg-slate-950 text-white flex flex-col transform transition-all duration-300 ease-in-out z-50 border-r border-slate-800 dark:border-slate-900 ${
+        className={`fixed left-0 top-0 h-screen bg-sidebar text-sidebar-foreground flex flex-col transform transition-all duration-300 ease-in-out z-50 border-r border-sidebar-border ${
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         } ${isCollapsed ? 'w-20' : 'w-64'}`}
       >
         {/* Header */}
-        <div className={`p-6 border-b border-slate-800 dark:border-slate-900 flex items-center justify-between ${isCollapsed ? 'p-4' : ''}`}>
+        <div className={`p-6 border-b border-sidebar-border flex items-center justify-between ${isCollapsed ? 'p-4' : ''}`}>
           {!isCollapsed ? (
             <div>
-              <h1 className="text-2xl font-bold">Admin Panel</h1>
-              <p className="text-sm text-slate-400 mt-1">CMS Dashboard</p>
+              <h1 className="text-2xl font-bold text-sidebar-foreground">Admin Panel</h1>
+              <p className="text-sm text-muted-foreground mt-1">CMS Dashboard</p>
             </div>
           ) : (
             <div className="w-full flex justify-center">
-              <LayoutDashboard size={24} />
+              <LayoutDashboard size={24} className="text-sidebar-foreground" />
             </div>
           )}
         </div>
@@ -170,7 +177,7 @@ export default function AdminSidebar() {
         {/* Collapse Toggle Button - Desktop Only */}
         <button
           onClick={toggleCollapse}
-          className={`hidden lg:flex absolute -right-3 top-20 bg-slate-800 dark:bg-slate-900 hover:bg-slate-700 dark:hover:bg-slate-800 text-white rounded-full p-1.5 shadow-lg transition-all ${
+          className={`hidden lg:flex absolute -right-3 top-20 bg-sidebar-accent hover:bg-sidebar-accent/80 text-sidebar-foreground rounded-full p-1.5 shadow-elevation-2 transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
             isCollapsed ? 'rotate-180' : ''
           }`}
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -197,10 +204,10 @@ export default function AdminSidebar() {
                           setIsMobileMenuOpen(false);
                           // Don't prevent default, let the link navigate
                         }}
-                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group relative w-full ${
+                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group relative w-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
                           isAnyChildActive
-                            ? 'bg-blue-600 text-white'
-                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
                         } ${isCollapsed ? 'justify-center' : ''}`}
                         title={isCollapsed ? item.name : undefined}
                       >
@@ -213,7 +220,7 @@ export default function AdminSidebar() {
                         
                         {/* Tooltip for collapsed state */}
                         {isCollapsed && (
-                          <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                          <span className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-elevation-2">
                             {item.name}
                           </span>
                         )}
@@ -226,7 +233,7 @@ export default function AdminSidebar() {
                             e.stopPropagation();
                             toggleDropdown(item.name);
                           }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded transition-colors"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-sidebar-accent rounded transition-colors"
                         >
                           <ChevronDown
                             size={16}
@@ -247,10 +254,10 @@ export default function AdminSidebar() {
                               <Link
                                 href={child.href}
                                 onClick={() => setIsMobileMenuOpen(false)}
-                                className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm ${
+                                className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
                                   isActive
-                                    ? 'bg-blue-600 text-white'
-                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
                                 }`}
                               >
                                 {ChildIcon && <ChildIcon size={16} />}
@@ -272,10 +279,10 @@ export default function AdminSidebar() {
                   <Link
                     href={item.href!}
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group relative ${
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group relative focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
                       isActive
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
                     } ${isCollapsed ? 'justify-center' : ''}`}
                     title={isCollapsed ? item.name : undefined}
                   >
@@ -293,7 +300,7 @@ export default function AdminSidebar() {
                     
                     {/* Tooltip for collapsed state */}
                     {isCollapsed && (
-                      <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                      <span className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-elevation-2">
                         {item.name} {item.badge && `(${item.badge})`}
                       </span>
                     )}
@@ -305,20 +312,21 @@ export default function AdminSidebar() {
         </nav>
 
         {/* Logout */}
-        <div className={`p-4 border-t border-slate-800 dark:border-slate-900 ${isCollapsed ? 'px-2' : ''}`}>
+        <div className={`p-4 border-t border-sidebar-border ${isCollapsed ? 'px-2' : ''}`}>
           <button
             onClick={handleLogout}
-            className={`flex items-center gap-3 px-4 py-3 w-full rounded-lg text-slate-300 hover:bg-slate-800 dark:hover:bg-slate-900 hover:text-white transition-colors group relative ${
+            className={`flex items-center gap-3 px-4 py-3 w-full rounded-lg text-sidebar-foreground/80 hover:bg-destructive hover:text-destructive-foreground transition-colors group relative focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2 ${
               isCollapsed ? 'justify-center' : ''
             }`}
             title={isCollapsed ? 'Logout' : undefined}
+            aria-label="Logout from admin panel"
           >
             <LogOut size={20} />
             {!isCollapsed && <span className="font-medium">Logout</span>}
             
             {/* Tooltip for collapsed state */}
             {isCollapsed && (
-              <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 dark:bg-slate-900 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              <span className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-elevation-2">
                 Logout
               </span>
             )}

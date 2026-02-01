@@ -62,17 +62,17 @@ export default function CommentSection({ postId }: { postId: string }) {
       
       <div className="space-y-6 mb-10">
         {comments.map((comment) => (
-          <div key={comment.id} className="bg-gray-50 p-4 rounded-lg">
+          <div key={comment.id} className="bg-muted p-4 rounded-lg">
             <div className="flex justify-between mb-2">
               <span className="font-semibold">{comment.authorName || comment.user?.name || 'Anonymous'}</span>
-              <span className="text-gray-500 text-sm">{new Date(comment.createdAt).toLocaleDateString()}</span>
+              <span className="text-muted-foreground text-sm">{new Date(comment.createdAt).toLocaleDateString()}</span>
             </div>
-            <p className="text-gray-700">{comment.content}</p>
+            <p className="text-foreground">{comment.content}</p>
           </div>
         ))}
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white p-6 border rounded-xl shadow-sm">
+      <form onSubmit={handleSubmit} className="bg-card p-6 border rounded-xl shadow-sm">
         <h4 className="font-bold mb-4">Leave a Reply</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <input 

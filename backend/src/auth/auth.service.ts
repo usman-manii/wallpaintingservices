@@ -107,12 +107,18 @@ export class AuthService {
       throw new BadRequestException('Email already registered');
     }
 
-    // Validate password strength (minimum 8 chars, 1 uppercase, 1 lowercase, 1 number)
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d@$!%*?&]{8,}$/;
+    // Validate password strength (minimum 12 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char)
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+=\-\[\]{}|\\:;"'<>,.\/`~])[A-Za-z\d@$!%*?&#^()_+=\-\[\]{}|\\:;"'<>,.\/`~]{12,}$/;
     if (!passwordRegex.test(data.password)) {
       throw new BadRequestException(
-        'Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number'
+        'Password must be at least 12 characters with 1 uppercase, 1 lowercase, 1 number, and 1 special character'
       );
+    }
+    
+    // Check for common weak passwords
+    const weakPasswords = ['Password123!', '123456789abc', 'Qwerty123!', 'Admin123!', 'Welcome123!'];
+    if (weakPasswords.some(weak => data.password.toLowerCase().includes(weak.toLowerCase()))) {
+      throw new BadRequestException('Password is too common. Please choose a stronger password');
     }
 
     // Hash password with salt rounds of 12 (more secure than 10)

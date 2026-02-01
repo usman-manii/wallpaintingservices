@@ -12,7 +12,7 @@ export default function ContactInfoRedirect() {
 
   return (
     <div className="flex items-center justify-center min-h-screen">
-      <div className="text-slate-500">Redirecting to contact info...</div>
+      <div className="text-muted-foreground">Redirecting to contact info...</div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -49,14 +49,10 @@ export default function TagManagementPage() {
     parentId: '',
   });
 
-  useEffect(() => {
-    fetchTags();
-  }, []);
-
-  const fetchTags = async () => {
+  const fetchTags = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchAPI('/blog/admin/tags');
+      const data = await fetchAPI('/blog/admin/tags', { redirectOn401: false, cache: 'no-store' });
       setTags(Array.isArray(data) ? data : []);
     } catch (error: any) {
       console.error('Error fetching tags:', error);
@@ -64,7 +60,11 @@ export default function TagManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchTags();
+  }, [fetchTags]);
 
   const handleCreateTag = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +72,8 @@ export default function TagManagementPage() {
       await fetchAPI('/blog/admin/tags', {
         method: 'POST',
         body: JSON.stringify(formData),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       success('Tag created successfully!');
       setShowCreateModal(false);
@@ -91,6 +93,8 @@ export default function TagManagementPage() {
       await fetchAPI(`/blog/admin/tags/${editingTag.id}`, {
         method: 'PUT',
         body: JSON.stringify(formData),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       success('Tag updated successfully!');
       setEditingTag(null);
@@ -116,7 +120,7 @@ export default function TagManagementPage() {
       async () => {
         try {
               try {
-            await fetchAPI(`/blog/admin/tags/${id}`, { method: 'DELETE' });
+            await fetchAPI(`/blog/admin/tags/${id}`, { method: 'DELETE', redirectOn401: false, cache: 'no-store' });
             success('Tag deleted successfully!');
             fetchTags();
           } catch (error: any) {
@@ -167,6 +171,8 @@ export default function TagManagementPage() {
           await fetchAPI('/blog/admin/tags/merge', {
             method: 'POST',
             body: JSON.stringify({ sourceIds, targetId: mergeTargetId }),
+            redirectOn401: false,
+            cache: 'no-store',
           });
           success('Tags merged successfully!');
           setSelectedTags(new Set());

@@ -1,25 +1,24 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-
-type Theme = 'light' | 'dark' | 'system';
+import { THEME, ThemeMode, LOCAL_STORAGE_KEYS } from '@/lib/constants';
 
 interface ThemeContextType {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
+  theme: ThemeMode;
+  setTheme: (theme: ThemeMode) => void;
   isDark: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('system');
+  const [theme, setThemeState] = useState<ThemeMode>(THEME.SYSTEM);
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
     // Load theme from localStorage
-    const savedTheme = localStorage.getItem('theme') as Theme | null;
-    if (savedTheme) {
+    const savedTheme = localStorage.getItem(LOCAL_STORAGE_KEYS.THEME) as ThemeMode | null;
+    if (savedTheme && Object.values(THEME).includes(savedTheme as ThemeMode)) {
       setThemeState(savedTheme);
     }
   }, []);
@@ -28,7 +27,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const updateTheme = () => {
       const root = document.documentElement;
       const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const shouldBeDark = theme === 'dark' || (theme === 'system' && systemDark);
+      const shouldBeDark = theme === THEME.DARK || (theme === THEME.SYSTEM && systemDark);
       
       setIsDark(shouldBeDark);
       
@@ -44,7 +43,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // Listen for system theme changes
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = () => {
-      if (theme === 'system') {
+      if (theme === THEME.SYSTEM) {
         updateTheme();
       }
     };
@@ -53,9 +52,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mediaQuery.removeEventListener('change', handler);
   }, [theme]);
 
-  const setTheme = (newTheme: Theme) => {
+  const setTheme = (newTheme: ThemeMode) => {
     setThemeState(newTheme);
-    localStorage.setItem('theme', newTheme);
+    localStorage.setItem(LOCAL_STORAGE_KEYS.THEME, newTheme);
   };
 
   return (

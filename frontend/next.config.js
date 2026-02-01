@@ -170,21 +170,58 @@ const nextConfig = {
   ],
   
   // Webpack optimization
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, webpack }) => {
     if (!isServer) {
+      // Enhanced code splitting
       config.optimization.splitChunks = {
         chunks: 'all',
         cacheGroups: {
           default: false,
           vendors: false,
+          // React and React-DOM in separate chunk
+          framework: {
+            name: 'framework',
+            test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+            priority: 40,
+            enforce: true,
+          },
+          // Common libraries
+          lib: {
+            test: /[\\/]node_modules[\\/]/,
+            name(module) {
+              const packageName = module.context.match(/[\\/]node_modules[\\/](.*?)([\\/]|$)/)[1];
+              return `npm.${packageName.replace('@', '')}`;
+            },
+            priority: 30,
+            minChunks: 1,
+            reuseExistingChunk: true,
+          },
           commons: {
             name: 'commons',
-            chunks: 'all',
             minChunks: 2,
+            priority: 20,
+          },
+          // Shared UI components
+          shared: {
+            name: 'shared',
+            minChunks: 2,
+            priority: 10,
+            reuseExistingChunk: true,
+            enforce: true,
           },
         },
       };
     }
+    
+    // Production-specific optimizations
+    if (process.env.NODE_ENV === 'production') {
+      // Remove source maps in production for security and performance
+      config.devtool = false;
+      
+      // Minimize bundle size
+      config.optimization.minimize = true;
+    }
+
     return config;
   },
   

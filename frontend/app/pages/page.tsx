@@ -49,8 +49,8 @@ export default async function PagesPage() {
     <div className="container mx-auto px-4 py-12">
       {/* Header */}
       <div className="mb-12 text-center max-w-3xl mx-auto">
-        <h1 className="text-4xl font-bold text-slate-900 mb-4">All Pages</h1>
-        <p className="text-xl text-slate-600">
+        <h1 className="text-4xl font-bold text-foreground mb-4">All Pages</h1>
+        <p className="text-xl text-muted-foreground">
           Browse all published pages on our website
         </p>
       </div>
@@ -70,20 +70,20 @@ export default async function PagesPage() {
                       href={`/${page.slug === '(home)' ? '' : page.slug}`}
                       className="block group"
                     >
-                      <h2 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-blue-600 transition-colors">
+                      <h2 className="text-xl font-bold text-foreground mb-2 group-hover:text-primary transition-colors">
                         {page.title}
                       </h2>
                     </Link>
                     {page.description && (
-                      <p className="text-slate-600 text-sm mb-4 line-clamp-2">
+                      <p className="text-muted-foreground text-sm mb-4 line-clamp-2">
                         {page.description}
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                <div className="flex items-center justify-between pt-4 border-t border-border">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Calendar className="w-4 h-4" />
                     {page.publishedAt 
                       ? new Date(page.publishedAt).toLocaleDateString()
@@ -101,8 +101,8 @@ export default async function PagesPage() {
           ))}
         </div>
       ) : (
-        <div className="bg-slate-50 border border-dashed rounded-xl p-12 text-center text-slate-500 max-w-2xl mx-auto">
-          <FileText className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+        <div className="bg-muted border border-dashed rounded-xl p-12 text-center text-muted-foreground max-w-2xl mx-auto">
+          <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
           <p className="text-lg font-medium mb-2">No pages published yet</p>
           <p className="text-sm">Check back later for new content.</p>
         </div>

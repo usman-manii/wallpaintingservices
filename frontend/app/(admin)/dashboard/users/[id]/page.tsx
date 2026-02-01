@@ -59,7 +59,7 @@ export default function EditUserPage() {
 
   const fetchUser = async () => {
     try {
-      const data = await fetchAPI(`/auth/users/${params.id}`);
+      const data = await fetchAPI(`/auth/users/${params.id}`, { redirectOn401: false });
       setUser(data);
     } catch (error: any) {
       console.error('Error fetching user:', error);
@@ -92,6 +92,7 @@ export default function EditUserPage() {
           linkedin: user?.linkedin,
           youtube: user?.youtube,
         }),
+        redirectOn401: false,
       });
 
       setMessage('User updated successfully!');
@@ -108,6 +109,7 @@ export default function EditUserPage() {
       await fetchAPI(`/auth/users/${params.id}/role`, {
         method: 'PUT',
         body: JSON.stringify({ role: newRole }),
+        redirectOn401: false,
       });
 
       setUser(prev => (prev ? { ...prev, role: newRole } : null));

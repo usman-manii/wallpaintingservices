@@ -12,7 +12,7 @@ export default function SettingsRedirect() {
 
   return (
     <div className="flex items-center justify-center min-h-screen">
-      <div className="text-slate-500">Redirecting to settings...</div>
+      <div className="text-muted-foreground">Redirecting to settings...</div>
     </div>
   );
 }

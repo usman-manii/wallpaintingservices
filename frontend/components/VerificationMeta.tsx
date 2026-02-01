@@ -16,15 +16,15 @@ interface VerificationSettings {
 export default function VerificationMeta() {
   const { settings, loading } = usePublicSettings();
 
-  const verification = useMemo<VerificationSettings>(() => {
-    if (!settings) return {};
+  const verification = useMemo(() => {
+    if (!settings) return {} as VerificationSettings;
     return {
-      googleSiteVerification: settings.googleSiteVerification,
-      bingSiteVerification: settings.bingSiteVerification,
-      yandexSiteVerification: settings.yandexSiteVerification,
-      pinterestVerification: settings.pinterestVerification,
-      facebookDomainVerification: settings.facebookDomainVerification,
-      customVerificationTag: settings.customVerificationTag,
+      googleSiteVerification: settings.googleSiteVerification as string | undefined,
+      bingSiteVerification: settings.bingSiteVerification as string | undefined,
+      yandexSiteVerification: settings.yandexSiteVerification as string | undefined,
+      pinterestVerification: settings.pinterestVerification as string | undefined,
+      facebookDomainVerification: settings.facebookDomainVerification as string | undefined,
+      customVerificationTag: settings.customVerificationTag as string | undefined,
     };
   }, [settings]);
 

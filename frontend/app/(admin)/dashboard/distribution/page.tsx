@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/Card';
@@ -39,13 +39,9 @@ export default function DistributionPage() {
   const [channels, setChannels] = useState<SocialChannel[]>(DEFAULT_CHANNELS);
   const [newChannel, setNewChannel] = useState({ name: '', url: '' });
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
-
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
-      const data = await fetchAPI('/settings');
+      const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
       if (data && data.socialLinks && Array.isArray(data.socialLinks)) {
         // Merge saved config
         const mergedDefaults = DEFAULT_CHANNELS.map(def => {
@@ -65,13 +61,19 @@ export default function DistributionPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showError]);
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
 
   const handleSave = async () => {
     try {
       await fetchAPI('/settings', {
         method: 'PUT',
         body: JSON.stringify({ socialLinks: channels }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       success('Distribution channels saved successfully');
     } catch (e) {

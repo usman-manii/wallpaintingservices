@@ -18,7 +18,7 @@ async function bootstrap() {
   // Validate environment variables before starting
   try {
     EnvironmentValidator.validate();
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`Environment validation failed: ${error.message}`);
     process.exit(1);
   }
@@ -108,6 +108,9 @@ async function bootstrap() {
   const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+    'http://192.168.1.10:3000', // Local network access
     process.env.FRONTEND_URL,
     process.env.PRODUCTION_URL,
   ].filter(Boolean);
@@ -116,6 +119,11 @@ async function bootstrap() {
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, Postman, etc.)
       if (!origin) return callback(null, true);
+      
+      // In development, be more permissive with local network IPs
+      if (!isProduction && origin.match(/^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+):(3000|3001)$/)) {
+        return callback(null, true);
+      }
       
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
@@ -151,18 +159,14 @@ async function bootstrap() {
   }));
 
   // 5. Swagger API Documentation (disabled in production unless explicitly enabled)
-  const swaggerEnabled = process.env.SWAGGER_ENABLED === 'true' || !isProduction;
+  // Temporarily disabled due to Swagger compatibility issue with NestJS 11
+  const swaggerEnabled = false; // process.env.SWAGGER_ENABLED === 'true' || !isProduction;
   if (swaggerEnabled) {
     const config = new DocumentBuilder()
       .setTitle('AI CMS API')
       .setDescription('Enterprise AI-powered Blogging Platform API with comprehensive content management')
       .setVersion('1.0.0')
-      .addBearerAuth({
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Enter JWT token',
-      })
+      .addBearerAuth()
       .addTag('auth', 'Authentication & User Management')
       .addTag('blog', 'Blog Posts & Content')
       .addTag('media', 'Media Library')
@@ -171,10 +175,10 @@ async function bootstrap() {
       .addTag('settings', 'Site Settings')
       .addTag('health', 'Health Checks')
       .build();
-    const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api/docs', app, document);
+    const document = SwaggerModule.createDocument(app as any, config);
+    SwaggerModule.setup('api/docs', app as any, document);
   } else {
-    logger.log('Swagger docs disabled (set SWAGGER_ENABLED=true to enable).');
+    logger.log('Swagger docs disabled (compatibility issue - will be fixed in next update).');
   }
 
   // 6. Graceful Shutdown Handling

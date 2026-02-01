@@ -87,11 +87,11 @@ export default function EmailApprovalsList() {
   if (requests.length === 0) {
     return (
       <Card>
-        <CardContent className="p-12 text-center text-slate-500">
+        <CardContent className="p-12 text-center text-muted-foreground">
           <div className="flex justify-center mb-4">
-            <Mail className="w-12 h-12 text-slate-300" />
+            <Mail className="w-12 h-12 text-muted-foreground/50" />
           </div>
-          <h3 className="text-lg font-medium text-slate-900 mb-1">No Pending Requests</h3>
+          <h3 className="text-lg font-medium text-foreground mb-1">No Pending Requests</h3>
           <p>There are no email change requests waiting for approval.</p>
         </CardContent>
       </Card>
@@ -110,22 +110,22 @@ export default function EmailApprovalsList() {
                     <Clock className="w-3 h-3 mr-1" />
                     Pending Approval
                   </span>
-                  <span className="text-sm text-slate-500">
+                  <span className="text-sm text-muted-foreground">
                     Requested on {format(new Date(request.createdAt), 'MMM d, yyyy h:mm a')}
                   </span>
                 </div>
                 
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
-                     <span className="font-medium text-slate-900">{request.user.email}</span>
+                     <span className="font-medium text-foreground">{request.user.email}</span>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-slate-400" />
+                  <ArrowRight className="w-4 h-4 text-muted-foreground" />
                   <div className="flex items-center gap-2">
                      <span className="font-medium text-blue-600">{request.newEmail}</span>
                   </div>
                 </div>
 
-                <div className="text-sm text-slate-500 mt-1 flex items-center gap-2">
+                <div className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
                   <User className="w-4 h-4" />
                   Requested by: {request.user.firstName} {request.user.lastName} ({request.user.username})
                 </div>

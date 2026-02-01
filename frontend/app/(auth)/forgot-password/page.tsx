@@ -42,11 +42,11 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="flex bg-slate-50 min-h-[80vh] items-center justify-center">
+    <div className="flex bg-background min-h-[80vh] items-center justify-center">
       <div className="w-full max-w-md mx-auto">
         <div className="text-center mb-8">
-           <h1 className="text-3xl font-bold text-slate-900">Reset Password</h1>
-           <p className="text-slate-500 mt-2">Enter your email to receive instructions</p>
+           <h1 className="text-3xl font-bold text-foreground">Reset Password</h1>
+           <p className="text-muted-foreground mt-2">Enter your email to receive instructions</p>
         </div>
 
         <Card>
@@ -63,9 +63,9 @@ export default function ForgotPasswordPage() {
             {status !== 'success' ? (
                 <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">Email Address</label>
+                    <label className="text-sm font-medium text-foreground">Email Address</label>
                     <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <Mail className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                     <Input 
                         type="email" 
                         placeholder="you@example.com" 
@@ -83,7 +83,7 @@ export default function ForgotPasswordPage() {
                 </form>
             ) : (
                 <div className="space-y-4">
-                  <p className="text-sm text-gray-600">Check your email for the reset link.</p>
+                  <p className="text-sm text-muted-foreground">Check your email for the reset link.</p>
                   <Button variant="outline" className="w-full" onClick={() => setStatus('idle')}>
                       Try another email
                   </Button>
@@ -91,7 +91,7 @@ export default function ForgotPasswordPage() {
             )}
             
             <div className="mt-4 text-center text-sm">
-                <Link href="/login" className="text-gray-500 hover:text-gray-900 flex items-center justify-center gap-2">
+                <Link href="/login" className="text-muted-foreground hover:text-foreground flex items-center justify-center gap-2">
                     <ArrowLeft className="w-4 h-4"/> Back to Login
                 </Link>
             </div>

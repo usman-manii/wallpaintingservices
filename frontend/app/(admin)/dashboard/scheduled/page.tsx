@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
@@ -23,27 +23,29 @@ export default function ScheduledPostsPage() {
   const [loading, setLoading] = useState(false);
   const [processingScheduled, setProcessingScheduled] = useState(false);
 
-  useEffect(() => {
-    fetchScheduledPosts();
-  }, []);
-
-  const fetchScheduledPosts = async () => {
+  const fetchScheduledPosts = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchAPI('/blog/admin/scheduled');
+      const data = await fetchAPI('/blog/admin/scheduled', { redirectOn401: false, cache: 'no-store' });
       setPosts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching scheduled posts:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchScheduledPosts();
+  }, [fetchScheduledPosts]);
 
   const handleProcessScheduled = async () => {
     setProcessingScheduled(true);
     try {
       const result = await fetchAPI('/blog/admin/process-scheduled', {
         method: 'POST',
+        redirectOn401: false,
+        cache: 'no-store',
       }).catch(() => null);
       success(`${(result as any) || 0} posts published!`);
       fetchScheduledPosts();

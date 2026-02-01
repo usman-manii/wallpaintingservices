@@ -53,8 +53,8 @@ export default function GetQuotePage() {
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-2xl">
-      <Card className="shadow-lg border-slate-200 dark:border-slate-700">
-        <CardHeader className="text-center bg-blue-600 text-white rounded-t-xl py-8">
+      <Card className="shadow-lg border-border">
+        <CardHeader className="text-center bg-primary text-primary-foreground rounded-t-xl py-8">
           <CardTitle className="text-3xl font-bold text-white">Get a Free Quote</CardTitle>
           <CardDescription className="text-blue-100 text-lg">
             Tell us about your project and we'll get back to you with an estimate.
@@ -66,11 +66,11 @@ export default function GetQuotePage() {
               <div className="bg-green-100 text-green-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckCircle size={32} />
               </div>
-              <h3 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Request Received!</h3>
-              <p className="text-slate-600 dark:text-slate-400 mb-6">
+              <h3 className="text-2xl font-bold text-foreground mb-2">Request Received!</h3>
+              <p className="text-muted-foreground mb-6">
                 Thank you for your interest. One of our painting experts will contact you shortly.
               </p>
-              <Button onClick={() => setStatus('idle')} className="bg-blue-600 hover:bg-blue-700">
+              <Button onClick={() => setStatus('idle')} className="bg-primary hover:bg-primary/90">
                 Submit Another Request
               </Button>
             </div>
@@ -85,7 +85,7 @@ export default function GetQuotePage() {
 
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label htmlFor="name" className="text-sm font-medium text-slate-700 dark:text-slate-300">Full Name</label>
+                  <label htmlFor="name" className="text-sm font-medium text-foreground">Full Name</label>
                   <Input 
                     id="name" 
                     name="name" 
@@ -96,7 +96,7 @@ export default function GetQuotePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="phone" className="text-sm font-medium text-slate-700 dark:text-slate-300">Phone Number</label>
+                  <label htmlFor="phone" className="text-sm font-medium text-foreground">Phone Number</label>
                   <Input 
                     id="phone" 
                     name="phone" 
@@ -110,7 +110,7 @@ export default function GetQuotePage() {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium text-slate-700 dark:text-slate-300">Email Address</label>
+                <label htmlFor="email" className="text-sm font-medium text-foreground">Email Address</label>
                 <Input 
                   id="email" 
                   name="email" 
@@ -123,13 +123,13 @@ export default function GetQuotePage() {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="serviceType" className="text-sm font-medium text-slate-700 dark:text-slate-300">Service Needed</label>
+                <label htmlFor="serviceType" className="text-sm font-medium text-foreground">Service Needed</label>
                 <select 
                   id="serviceType" 
                   name="serviceType" 
                   value={formData.serviceType}
                   onChange={handleChange}
-                  className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus-visible:ring-slate-300"
+                  className="flex h-10 w-full rounded-md border border-input bg-input px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="Residential Painting">Residential Painting (Villa/Apartment)</option>
                   <option value="Commercial Painting">Commercial Painting (Office/Shop)</option>
@@ -141,7 +141,7 @@ export default function GetQuotePage() {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="message" className="text-sm font-medium text-slate-700 dark:text-slate-300">Project Details</label>
+                <label htmlFor="message" className="text-sm font-medium text-foreground">Project Details</label>
                 <textarea 
                   id="message" 
                   name="message" 
@@ -149,7 +149,7 @@ export default function GetQuotePage() {
                   rows={5}
                   value={formData.message} 
                   onChange={handleChange}
-                  className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus-visible:ring-slate-300"
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-input px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   required
                 />
               </div>

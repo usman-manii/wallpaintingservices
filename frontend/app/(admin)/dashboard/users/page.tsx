@@ -56,12 +56,15 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     try {
-      const data = await fetchAPI('/auth/users');
+      const data = await fetchAPI('/auth/users', { redirectOn401: false });
       setUsers(Array.isArray(data) ? data : []);
       setError(null);
     } catch (error: any) {
       console.error('Error fetching users:', error);
-      setError(error.message || 'Failed to fetch users');
+      // Don't set error for 401 - let layout handle redirect
+      if (!error.message?.includes('Unauthorized')) {
+        setError(error.message || 'Failed to fetch users');
+      }
     } finally {
       setLoading(false);
     }
@@ -70,7 +73,7 @@ export default function UsersPage() {
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetchAPI('/auth/register', { method: 'POST', body: JSON.stringify(newUser) });
+      await fetchAPI('/auth/register', { method: 'POST', body: JSON.stringify(newUser), redirectOn401: false });
       setNewUser({ email: '', name: '', password: '', role: 'USER' });
       setShowAddUser(false);
       fetchUsers();
@@ -106,7 +109,7 @@ export default function UsersPage() {
       async () => {
         try {
           try {
-            await fetchAPI(`/auth/users/${id}`, { method: 'DELETE' });
+            await fetchAPI(`/auth/users/${id}`, { method: 'DELETE', redirectOn401: false });
             success(`User "${username}" deleted successfully`);
             fetchUsers();
           } catch (error: any) {
@@ -125,7 +128,7 @@ export default function UsersPage() {
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-6">Users Management</h1>
+        <h1 className="text-3xl font-bold text-foreground mb-6">Users Management</h1>
         <LoadingSkeleton lines={6} />
       </div>
     );
@@ -148,21 +151,21 @@ export default function UsersPage() {
       {doubleDialog}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
             <Users className="w-8 h-8 text-blue-600" />
             Users & Roles
           </h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-2">Manage user accounts, roles, and permissions across your site</p>
+          <p className="text-muted-foreground mt-2">Manage user accounts, roles, and permissions across your site</p>
         </div>
       </div>
 
-      <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex gap-4 mb-6 border-b border-border">
         <button
           onClick={() => setActiveTab('users')}
           className={`pb-2 px-1 font-medium text-sm transition-colors relative ${
             activeTab === 'users'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-slate-500 hover:text-slate-700'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           User Management
@@ -171,8 +174,8 @@ export default function UsersPage() {
           onClick={() => setActiveTab('roles')}
           className={`pb-2 px-1 font-medium text-sm transition-colors relative ${
             activeTab === 'roles'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-slate-500 hover:text-slate-700'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           User Roles & Capabilities
@@ -181,8 +184,8 @@ export default function UsersPage() {
           onClick={() => setActiveTab('approvals')}
           className={`pb-2 px-1 font-medium text-sm transition-colors relative ${
             activeTab === 'approvals'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-slate-500 hover:text-slate-700'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           Pending Email Approvals
@@ -206,7 +209,7 @@ export default function UsersPage() {
             <h3 className="text-lg font-semibold mb-4">Add New User</h3>
             <form onSubmit={handleAddUser} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Name</label>
+                <label className="block text-sm font-medium text-foreground mb-2">Name</label>
                 <Input
                   value={newUser.name}
                   onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
@@ -215,7 +218,7 @@ export default function UsersPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Email</label>
+                <label className="block text-sm font-medium text-foreground mb-2">Email</label>
                 <Input
                   type="email"
                   value={newUser.email}
@@ -225,7 +228,7 @@ export default function UsersPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                <label className="block text-sm font-medium text-foreground mb-2">Password</label>
                 <Input
                   type="password"
                   value={newUser.password}
@@ -235,11 +238,11 @@ export default function UsersPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Role</label>
+                <label className="block text-sm font-medium text-foreground mb-2">Role</label>
                 <select
                   value={newUser.role}
                   onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-input"
                 >
                   <option value="SUBSCRIBER">Subscriber - Can read content and manage profile</option>
                   <option value="CONTRIBUTOR">Contributor - Can create and edit own posts</option>

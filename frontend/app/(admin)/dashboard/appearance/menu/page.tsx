@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -100,21 +100,17 @@ export default function MenuManagementPage() {
     postId?: string;
   }>({ type: 'custom', label: '', url: '', pageId: '', postId: '' });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
       console.log('🔍 Loading menu data...');
       const [settingsData, pagesData, postsData] = await Promise.all([
-        fetchAPI('/settings'),
-        fetchAPI('/pages?status=PUBLISHED').catch((err) => {
+        fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' }),
+        fetchAPI('/pages?status=PUBLISHED', { redirectOn401: false, cache: 'no-store' }).catch((err) => {
           console.warn('⚠️ Failed to fetch pages from protected endpoint, trying public:', err);
           // Fallback to public endpoint if protected fails
-          return fetchAPI('/pages/public');
+          return fetchAPI('/pages/public', { redirectOn401: false, cache: 'no-store' });
         }),
-        fetchAPI('/blog/admin/posts?status=PUBLISHED&take=100') // Use admin endpoint for authenticated users
+        fetchAPI('/blog/admin/posts?status=PUBLISHED&take=100', { redirectOn401: false, cache: 'no-store' }) // Use admin endpoint for authenticated users
       ]);
 
       console.log('📦 Settings data:', settingsData ? 'received' : 'null');
@@ -208,13 +204,19 @@ export default function MenuManagementPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   async function handleSave() {
     try {
       await fetchAPI('/settings', {
         method: 'PUT',
-        body: JSON.stringify({ menuStructure: { menus } })
+        body: JSON.stringify({ menuStructure: { menus } }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       success('Menu structure saved successfully!');
     } catch (e: any) {

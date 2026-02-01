@@ -100,7 +100,7 @@ export default function RootLayout({
         {gtmId && <GoogleTagManager gtmId={gtmId} />}
       </head>
       <body 
-        className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans antialiased selection:bg-blue-100 dark:selection:bg-blue-900 selection:text-blue-900 dark:selection:text-blue-100 transition-colors duration-200"
+        className="min-h-screen flex flex-col bg-background text-foreground font-sans antialiased selection:bg-primary/10 selection:text-primary transition-colors duration-200"
         suppressHydrationWarning
       >
         <UserSessionProvider>

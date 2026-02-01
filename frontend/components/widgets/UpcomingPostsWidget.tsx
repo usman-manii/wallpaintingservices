@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CalendarClock } from 'lucide-react';
 import { API_URL } from '@/lib/api';
+import { logger } from '@/lib/logger';
 
 export default function UpcomingPostsWidget() {
     const [upcoming, setUpcoming] = useState<any[]>([]);
@@ -23,7 +24,7 @@ export default function UpcomingPostsWidget() {
                     setUpcoming(Array.isArray(data) ? data : data.posts || []); 
                 }
             } catch (e) {
-                console.error("Failed to fetch upcoming posts", e);
+                logger.error("Failed to fetch upcoming posts", e as Error);
             } finally {
                 setLoading(false);
             }

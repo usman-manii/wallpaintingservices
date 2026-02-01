@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/Card';
@@ -62,16 +62,10 @@ export default function SettingsPage() {
   const [uploadContent, setUploadContent] = useState('');
   const [uploadDescription, setUploadDescription] = useState('');
 
-  useEffect(() => {
-    loadSettings();
-    loadPages();
-    loadVerificationFiles();
-  }, [router]);
-
-  async function loadPages() {
+  const loadPages = useCallback(async () => {
     try {
       const params = new URLSearchParams({ status: 'PUBLISHED' });
-      const data = await fetchAPI(`/pages?${params.toString()}`);
+      const data = await fetchAPI(`/pages?${params.toString()}`, { redirectOn401: false, cache: 'no-store' });
 
       let pagesList: any[] = [];
       if (Array.isArray(data)) {
@@ -88,11 +82,11 @@ export default function SettingsPage() {
       console.error('❌ Unexpected error loading pages:', e);
       setPages([]);
     }
-  }
+  }, []);
 
-  async function loadSettings() {
+  const loadSettings = useCallback(async () => {
     try {
-      const data = await fetchAPI('/settings');
+      const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
       if (data) {
         setSettings({
           siteName: data.siteName || '',
@@ -126,18 +120,24 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function loadVerificationFiles() {
+  const loadVerificationFiles = useCallback(async () => {
     try {
-      const data = await fetchAPI('/settings/verification-files');
+      const data = await fetchAPI('/settings/verification-files', { redirectOn401: false, cache: 'no-store' });
       if (Array.isArray(data)) {
         setVerificationFiles(data);
       }
     } catch (error) {
       console.error('Failed to load verification files:', error);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadSettings();
+    loadPages();
+    loadVerificationFiles();
+  }, [router, loadSettings, loadPages, loadVerificationFiles]);
 
   async function handleSave() {
     setMessage('');
@@ -176,7 +176,9 @@ export default function SettingsPage() {
       
       const response = await fetchAPI('/settings', {
         method: 'PUT',
-        body: JSON.stringify(settingsToSave)
+        body: JSON.stringify(settingsToSave),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       
       setMessage('✅ Settings saved successfully!');
@@ -220,6 +222,8 @@ export default function SettingsPage() {
           content: uploadContent,
           description: uploadDescription,
         }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
 
       success('Verification file uploaded successfully!');
@@ -242,7 +246,7 @@ export default function SettingsPage() {
       `Delete verification file for ${platform}?`,
       async () => {
         try {
-          await fetchAPI(`/settings/verification-files/${platform}`, { method: 'DELETE' });
+          await fetchAPI(`/settings/verification-files/${platform}`, { method: 'DELETE', redirectOn401: false, cache: 'no-store' });
           success('Verification file deleted successfully!');
           await loadVerificationFiles();
         } catch (error: any) {

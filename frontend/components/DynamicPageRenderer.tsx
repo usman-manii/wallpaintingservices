@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { notFound } from 'next/navigation';
 import { fetchAPI } from '@/lib/api';
 import type { PageSection } from '@/lib/page-builder-types';
@@ -25,11 +25,7 @@ export default function DynamicPageRenderer({ slug }: { slug: string }) {
   const [page, setPage] = useState<PageData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchPage();
-  }, [slug]);
-
-  const fetchPage = async () => {
+  const fetchPage = useCallback(async () => {
     try {
       // Skip fetching if this is an admin route
       if (slug.startsWith('dashboard/') || slug.startsWith('auth/') || slug.startsWith('admin/')) {
@@ -52,7 +48,11 @@ export default function DynamicPageRenderer({ slug }: { slug: string }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [slug]);
+
+  useEffect(() => {
+    fetchPage();
+  }, [fetchPage]);
 
   useEffect(() => {
     // SECURITY: Custom CSS injection is disabled due to XSS risks

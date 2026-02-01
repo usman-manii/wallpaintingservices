@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -32,13 +32,9 @@ export default function CustomizePage() {
   });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadAppearance();
-  }, []);
-
-  async function loadAppearance() {
+  const loadAppearance = useCallback(async () => {
     try {
-      const data = await fetchAPI('/settings');
+      const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
       if (data?.appearanceSettings) {
         setAppearance({
           colors: { ...appearance.colors, ...data.appearanceSettings.colors },
@@ -51,13 +47,19 @@ export default function CustomizePage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadAppearance();
+  }, [loadAppearance]);
 
   async function handleSave() {
     try {
       await fetchAPI('/settings', {
         method: 'PUT',
-        body: JSON.stringify({ appearanceSettings: appearance })
+        body: JSON.stringify({ appearanceSettings: appearance }),
+        redirectOn401: false,
+        cache: 'no-store',
       });
       success('Appearance settings saved successfully!');
     } catch (e: any) {

@@ -115,9 +115,9 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
   const relatedPosts = await getRelatedPosts(post.id);
 
   return (
-    <div className="bg-slate-50 dark:bg-slate-900 min-h-screen pb-20">
+    <div className="bg-background min-h-screen pb-20">
       {/* Hero Header with Featured Image */}
-      <div className="bg-slate-900 text-white py-20 px-4 relative overflow-hidden">
+      <div className="bg-sidebar text-sidebar-foreground py-20 px-4 relative overflow-hidden">
         {post.featuredImage && (
           <div className="absolute inset-0 opacity-20">
             <img 
@@ -129,12 +129,12 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
         )}
         <div className="max-w-3xl mx-auto relative z-10">
           <Link href="/">
-            <Button variant="ghost" className="text-slate-300 hover:text-white hover:bg-slate-800 mb-8 pl-0">
+            <Button variant="ghost" className="text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent mb-8 pl-0 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
               <ArrowLeft size={16} className="mr-2" /> Back to Blog
             </Button>
           </Link>
-          <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight text-white">{post.title}</h1>
-          <div className="flex flex-wrap gap-6 text-slate-300 text-sm">
+          <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight text-sidebar-foreground">{post.title}</h1>
+          <div className="flex flex-wrap gap-6 text-sidebar-foreground/80 text-sm">
             <span className="flex items-center gap-2">
               <Calendar size={16} />
               {new Date(post.publishedAt || post.createdAt).toLocaleDateString()}
@@ -152,7 +152,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
               {post.viewCount || 0} views
             </span>
             {post.aiGenerated && (
-              <span className="flex items-center gap-2 bg-blue-600 text-white px-3 py-1 rounded-full text-xs">
+              <span className="flex items-center gap-2 bg-primary text-primary-foreground px-3 py-1 rounded-full text-xs">
                 🤖 AI-Enhanced
               </span>
             )}
@@ -165,8 +165,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
                 <Link
                   key={tag.id}
                   href={`/blog?tag=${tag.slug}`}
-                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-full transition-colors"
-                >
+                  className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-1 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
                   {tag.name}
                 </Link>
               ))}
@@ -178,7 +177,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
       <div className="max-w-4xl mx-auto px-4 -mt-10 relative z-20">
         <div className="space-y-8">
           {/* Main Content */}
-          <article className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 p-8 md:p-12">
+          <article className="bg-card rounded-xl shadow-elevation-3 border border-border p-8 md:p-12">
             <div 
               className="prose prose-lg prose-slate dark:prose-invert max-w-none mb-12"
               // SECURITY NOTE: Content is sanitized on backend using SanitizationUtil.sanitizeHTML()
@@ -188,14 +187,14 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
 
             {/* Categories */}
             {post.categories && post.categories.length > 0 && (
-              <div className="border-t border-slate-200 dark:border-slate-700 pt-8 mt-8">
-                <h4 className="font-bold text-slate-900 dark:text-white mb-4">Categories</h4>
+              <div className="border-t border-border pt-8 mt-8">
+                <h4 className="font-bold text-foreground mb-4">Categories</h4>
                 <div className="flex flex-wrap gap-2">
                   {post.categories.map((cat: any) => (
                     <Link
                       key={cat.id}
                       href={`/blog?category=${cat.slug}`}
-                      className="text-sm bg-purple-100 dark:bg-purple-900 hover:bg-purple-200 dark:hover:bg-purple-800 text-purple-700 dark:text-purple-300 px-4 py-2 rounded-lg transition-colors"
+                      className="text-sm bg-secondary hover:bg-secondary/80 text-secondary-foreground px-4 py-2 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                     >
                       {cat.name}
                     </Link>
@@ -204,8 +203,8 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
               </div>
             )}
 
-            <div className="border-t border-slate-200 dark:border-slate-700 pt-8 mt-8">
-              <h4 className="font-bold text-slate-900 dark:text-white mb-4">Share this post</h4>
+            <div className="border-t border-border pt-8 mt-8">
+              <h4 className="font-bold text-foreground mb-4">Share this post</h4>
               <ShareButtons title={post.title} />
             </div>
           </article>
@@ -237,12 +236,12 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
                       <Link
                         key={relatedPost.id || index}
                         href={`/blog/${relatedPost.slug}`}
-                        className="block p-4 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors h-full"
+                        className="block p-4 border border-border rounded-lg hover:bg-muted transition-colors h-full"
                       >
-                        <h3 className="font-semibold text-slate-900 dark:text-white mb-2 line-clamp-2">
+                        <h3 className="font-semibold text-foreground mb-2 line-clamp-2">
                           {relatedPost.title}
                         </h3>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-auto">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-auto">
                           <Calendar size={12} />
                           <span>{formattedDate}</span>
                         </div>

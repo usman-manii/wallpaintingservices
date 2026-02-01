@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { usePublicSettings } from '@/contexts/SettingsContext';
+import { CAPTCHA_TYPE, CaptchaType as CaptchaTypeEnum, API_ROUTES } from '@/lib/constants';
+import { api } from '@/lib/api';
 
-export type CaptchaType = 'recaptcha-v2' | 'recaptcha-v3' | 'custom';
+export type CaptchaType = CaptchaTypeEnum;
 
 export interface CaptchaProps {
   onVerify: (token: string, captchaId?: string, type?: string) => void;
@@ -14,7 +16,8 @@ export interface CaptchaProps {
 export function Captcha({ onVerify, type }: CaptchaProps) {
   const { settings } = usePublicSettings();
   const [currentMethod, setCurrentMethod] = useState<CaptchaType | null>(type || null);
-  const [fallbackMode, setFallbackMode] = useState(false);
+  const [fallbackChain, setFallbackChain] = useState<CaptchaType[]>([]);
+  const [attemptedMethods, setAttemptedMethods] = useState<Set<CaptchaType>>(new Set());
 
   useEffect(() => {
      if (type) {
@@ -26,43 +29,60 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
     if (!settings) return;
     
     if (!type) {
-      setCurrentMethod(settings.captchaType || 'recaptcha-v2');
+      // Build smart fallback chain based on available keys
+      const chain: CaptchaType[] = [];
+      
+      // Primary: Use configured type
+      const primary = (settings.captchaType as CaptchaType) || CAPTCHA_TYPE.RECAPTCHA_V2;
+      chain.push(primary);
+      
+      // Fallback cascade: V3 → V2 → Custom
+      if (primary !== CAPTCHA_TYPE.RECAPTCHA_V3 && settings.recaptchaV3SiteKey) {
+        chain.push(CAPTCHA_TYPE.RECAPTCHA_V3);
+      }
+      if (primary !== CAPTCHA_TYPE.RECAPTCHA_V2 && (settings.recaptchaV2SiteKey || settings.recaptchaSiteKey)) {
+        chain.push(CAPTCHA_TYPE.RECAPTCHA_V2);
+      }
+      if (primary !== CAPTCHA_TYPE.CUSTOM) {
+        chain.push(CAPTCHA_TYPE.CUSTOM);
+      }
+      
+      setFallbackChain(chain);
+      setCurrentMethod(chain[0]);
     }
   }, [settings, type]);
 
   const handleFallback = useCallback(() => {
-      console.warn(`Captcha Fallback triggered from ${currentMethod}`);
-      setFallbackMode(true);
-
-      if (currentMethod === 'recaptcha-v3') {
-          // Fallback V3 -> V2 -> Custom
-          if (settings?.recaptchaV2SiteKey) {
-              setCurrentMethod('recaptcha-v2');
-          } else {
-              setCurrentMethod('custom');
-          }
-      } else if (currentMethod === 'recaptcha-v2') {
-          // Fallback V2 -> V3 (if not tried) -> Custom
-          // Note: Usually if V2 fails (script block), V3 also fails.
-          // But strict requirement says support fallbacks.
-          if (settings?.recaptchaV3SiteKey && !fallbackMode) {
-             // Logic simplified: If V2 fails, go to Custom safely, unless V3 explicitly requested as fallback
-             // Let's go to Custom for reliability.
-             setCurrentMethod('custom');
-          } else {
-             setCurrentMethod('custom');
-          }
+      if (!currentMethod) return;
+      
+      console.warn(`⚠️ Captcha fallback triggered from ${currentMethod}`);
+      
+      // Mark current method as attempted
+      setAttemptedMethods(prev => new Set([...prev, currentMethod]));
+      
+      // Find next method in fallback chain that hasn't been attempted
+      const nextMethod = fallbackChain.find(method => 
+        method !== currentMethod && !attemptedMethods.has(method)
+      );
+      
+      if (nextMethod) {
+        console.log(`✓ Switching to ${nextMethod} captcha`);
+        setCurrentMethod(nextMethod);
       } else {
-          // Custom failed? Retry custom.
+        console.error('❌ All captcha methods exhausted, falling back to custom');
+        setCurrentMethod(CAPTCHA_TYPE.CUSTOM);
       }
-  }, [currentMethod, settings, fallbackMode]);
+  }, [currentMethod, fallbackChain, attemptedMethods]);
 
-  if (!settings || !currentMethod) return <div className="h-12 w-full bg-slate-100 dark:bg-slate-800 animate-pulse rounded-md" />;
+  // Track if we're in fallback mode (attempted other methods)
+  const isInFallbackMode = attemptedMethods.size > 0 && currentMethod === CAPTCHA_TYPE.CUSTOM;
+
+  if (!settings || !currentMethod) return <div className="h-12 w-full bg-muted animate-pulse rounded-md" />;
 
   return (
     <div className="min-h-[50px] transition-all">
-       {fallbackMode && currentMethod === 'custom' && (
-           <div className="text-xs text-amber-600 mb-2 flex items-center gap-1">
+       {isInFallbackMode && (
+           <div className="text-xs text-amber-600 dark:text-amber-400 mb-2 flex items-center gap-1">
                <AlertTriangle size={12} />
                <span>Security check service unavailable. Switched to internal verification.</span>
            </div>
@@ -70,7 +90,7 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
 
        {currentMethod === 'recaptcha-v3' && (
           <RecaptchaV3 
-            siteKey={settings.recaptchaV3SiteKey} 
+            siteKey={settings.recaptchaV3SiteKey ?? undefined} 
             onVerify={(t) => onVerify(t, undefined, 'recaptcha-v3')} 
             onError={handleFallback}
           />
@@ -78,7 +98,7 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
        
        {currentMethod === 'recaptcha-v2' && (
           <RecaptchaV2 
-            siteKey={settings.recaptchaV2SiteKey || settings.recaptchaSiteKey} 
+            siteKey={(settings.recaptchaV2SiteKey || settings.recaptchaSiteKey) as string | undefined} 
             onVerify={(t) => onVerify(t, undefined, 'recaptcha-v2')} 
             onError={handleFallback}
           />
@@ -209,7 +229,7 @@ function CustomCaptcha({ onVerify }: { onVerify: (token: string, id: string) => 
         setLoading(true);
         setVerified(false);
         try {
-            const data = await fetchAPI('/captcha/challenge');
+            const data = await api(API_ROUTES.CAPTCHA.CHALLENGE) as {image: string, captchaId: string};
             if (data && data.image && data.captchaId) {
                 setChallenge(data);
                 setInput('');
@@ -243,16 +263,16 @@ function CustomCaptcha({ onVerify }: { onVerify: (token: string, id: string) => 
     };
 
     if (!challenge) return (
-        <div className="h-16 w-full bg-slate-100 dark:bg-slate-800 animate-pulse rounded border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs text-slate-400">
+        <div className="h-16 w-full bg-muted animate-pulse rounded border border-border flex items-center justify-center text-xs text-muted-foreground">
             {loading ? 'Loading Security Check...' : 'Security Service Unavailable'}
         </div>
     );
 
     return (
-        <div className="border p-3 rounded-lg bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 space-y-3">
+        <div className="border p-3 rounded-lg bg-muted border-border space-y-3">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Security Check</span>
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Security Check</span>
                     {verified && (
                         <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
                             <ShieldCheck size={14} />
@@ -263,7 +283,7 @@ function CustomCaptcha({ onVerify }: { onVerify: (token: string, id: string) => 
                 <button 
                     type="button" 
                     onClick={loadChallenge} 
-                    className="text-blue-600 hover:text-blue-700 p-1 rounded-full hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors" 
+                    className="text-primary hover:text-primary/80 p-1 rounded-full hover:bg-muted-foreground/10 transition-colors" 
                     title="Refresh Captcha"
                     disabled={loading}
                 >
@@ -271,16 +291,16 @@ function CustomCaptcha({ onVerify }: { onVerify: (token: string, id: string) => 
                 </button>
             </div>
             <div className="flex gap-3">
-                <div className="relative h-12 w-32 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 overflow-hidden select-none flex items-center justify-center">
+                <div className="relative h-12 w-32 bg-card rounded border border-border overflow-hidden select-none flex items-center justify-center">
                      {/* eslint-disable-next-line @next/next/no-img-element */}
                      <img src={challenge.image} alt="Captcha" className="h-full w-full object-cover" draggable={false} />
                 </div>
                 <input 
                   type="text" 
-                  className={`flex-1 rounded-md border px-3 py-1 text-sm focus:ring-2 bg-white dark:bg-slate-800 uppercase tracking-widest font-mono text-center transition-colors ${
+                  className={`flex-1 rounded-md border px-3 py-1 text-sm focus:ring-2 bg-input uppercase tracking-widest font-mono text-center transition-colors ${
                     verified 
-                      ? 'border-green-500 focus:ring-green-500 text-green-700 dark:text-green-400' 
-                      : 'border-slate-300 dark:border-slate-600 focus:ring-blue-500'
+                      ? 'border-success focus:ring-success text-success-foreground' 
+                      : 'border-input focus:ring-primary'
                   }`}
                   placeholder="CODE"
                   maxLength={4}
@@ -289,7 +309,7 @@ function CustomCaptcha({ onVerify }: { onVerify: (token: string, id: string) => 
                   autoComplete="off"
                 />
             </div>
-             <p className="text-[10px] text-slate-400">
+             <p className="text-[10px] text-muted-foreground">
                 Enter the 4-character code shown in the image.
             </p>
         </div>

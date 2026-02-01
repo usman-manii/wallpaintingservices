@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { API_URL } from '@/lib/api';
 import type { PageSection } from '@/lib/page-builder-types';
 
@@ -25,11 +25,7 @@ export default function PageByIdRenderer({ pageId }: { pageId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchPage();
-  }, [pageId]);
-
-  const fetchPage = async () => {
+  const fetchPage = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -52,7 +48,11 @@ export default function PageByIdRenderer({ pageId }: { pageId: string }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pageId]);
+
+  useEffect(() => {
+    fetchPage();
+  }, [fetchPage]);
 
   if (loading) {
     return (

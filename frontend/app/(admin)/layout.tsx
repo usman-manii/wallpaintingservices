@@ -51,8 +51,9 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     const isAdminRole = role === 'ADMINISTRATOR' || role === 'SUPER_ADMIN' || role === 'EDITOR';
 
     // Redirect unauthenticated users to login
-    if (!role) {
+    if (!role || !user) {
       hasRedirectedRef.current = true;
+      console.debug('[AdminLayout] No auth detected, redirecting to login');
       const returnTo = pathname && pathname !== '/dashboard' ? pathname : '/dashboard';
       router.replace(`/auth?next=${encodeURIComponent(returnTo)}`);
       return;
@@ -61,26 +62,27 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     // Redirect non-admin users to profile
     if (!isAdminRole) {
       hasRedirectedRef.current = true;
+      console.debug('[AdminLayout] Non-admin user detected, redirecting to profile');
       router.replace('/profile');
       return;
     }
-  }, [loading, role, pathname, router]);
+  }, [loading, role, user, pathname, router]); // Stable: router from useRouter is stable
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
-        <div className="text-slate-500 dark:text-slate-400">Loading...</div>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-muted-foreground">Loading...</div>
       </div>
     );
   }
 
   const isAdminRole = role === 'ADMINISTRATOR' || role === 'SUPER_ADMIN' || role === 'EDITOR';
 
-  // Show loading state while redirecting
-  if (!role || !isAdminRole) {
+  // Show loading state while redirecting (role is null or user is not admin)
+  if (!role || !user || !isAdminRole) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
-        <div className="text-slate-500 dark:text-slate-400">Redirecting...</div>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-muted-foreground">Redirecting...</div>
       </div>
     );
   }
@@ -92,7 +94,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   if (!showSidebar) {
     // Regular user layout (no sidebar)
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+      <div className="min-h-screen bg-background">
         <main className="container mx-auto px-4 py-8">
           {children}
         </main>
@@ -102,7 +104,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
 
   // Admin layout with sidebar
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900">
+    <div className="flex min-h-screen bg-background">
       <AdminSidebar />
       <main 
         className={`flex-1 overflow-y-auto transition-all duration-300 ${

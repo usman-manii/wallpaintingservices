@@ -80,9 +80,9 @@ function ResetPasswordForm() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">New Password</label>
+                <label className="text-sm font-medium text-foreground">New Password</label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                  <Lock className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                   <Input 
                     type="password" 
                     placeholder="New password" 
@@ -96,9 +96,9 @@ function ResetPasswordForm() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Confirm Password</label>
+                <label className="text-sm font-medium text-foreground">Confirm Password</label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                  <Lock className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                   <Input 
                     type="password" 
                     placeholder="Confirm new password" 
@@ -122,10 +122,10 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <div className="flex bg-slate-50 min-h-[80vh] items-center justify-center">
+    <div className="flex bg-background min-h-[80vh] items-center justify-center">
       <div className="w-full max-w-md mx-auto">
         <div className="text-center mb-8">
-           <h1 className="text-3xl font-bold text-slate-900">Secure Your Account</h1>
+           <h1 className="text-3xl font-bold text-foreground">Secure Your Account</h1>
         </div>
         <Suspense fallback={<div>Loading form...</div>}>
             <ResetPasswordForm />

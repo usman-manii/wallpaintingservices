@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -61,17 +61,11 @@ export default function CommentModerationPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const errorShownRef = useRef<{ [key: string]: boolean }>({});
 
-  useEffect(() => {
-    fetchComments();
-    fetchStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
-
-  const fetchComments = async () => {
+  const fetchComments = useCallback(async () => {
     setLoading(true);
     try {
       const endpoint = activeTab === 'approved' ? '/blog' : `/comments/moderation/${activeTab}`;
-      const data = await fetchAPI(endpoint);
+      const data = await fetchAPI(endpoint, { redirectOn401: false, cache: 'no-store' });
       setComments(Array.isArray(data) ? data : []);
       errorShownRef.current['comments'] = false; // Reset on success
     } catch (error: any) {
@@ -84,11 +78,11 @@ export default function CommentModerationPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
-      const data = await fetchAPI('/comments/moderation/stats');
+      const data = await fetchAPI('/comments/moderation/stats', { redirectOn401: false, cache: 'no-store' });
       setStats(data || { total: 0, approved: 0, pending: 0, spam: 0, flagged: 0 });
       errorShownRef.current['stats'] = false; // Reset on success
     } catch (error: any) {
@@ -99,11 +93,16 @@ export default function CommentModerationPage() {
         showError(errorMsg);
       }
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchComments();
+    fetchStats();
+  }, [activeTab, fetchComments, fetchStats]);
 
   const handleApprove = async (id: string) => {
     try {
-      await fetchAPI(`/comments/${id}/approve`, { method: 'PATCH' });
+      await fetchAPI(`/comments/${id}/approve`, { method: 'PATCH', redirectOn401: false, cache: 'no-store' });
       success('Comment approved successfully!');
       fetchComments();
       fetchStats();
@@ -120,7 +119,7 @@ export default function CommentModerationPage() {
       async () => {
         try {
           try {
-            await fetchAPI(`/comments/${id}/reject`, { method: 'PATCH' });
+            await fetchAPI(`/comments/${id}/reject`, { method: 'PATCH', redirectOn401: false, cache: 'no-store' });
             success('Comment marked as spam!');
             fetchComments();
             fetchStats();
@@ -151,6 +150,8 @@ export default function CommentModerationPage() {
             await fetchAPI('/comments/moderation/bulk-approve', {
               method: 'POST',
               body: JSON.stringify({ ids: Array.from(selectedComments) }),
+              redirectOn401: false,
+              cache: 'no-store',
             });
             success(`${selectedComments.size} comment${selectedComments.size !== 1 ? 's' : ''} approved!`);
             setSelectedComments(new Set());
@@ -183,6 +184,8 @@ export default function CommentModerationPage() {
             await fetchAPI('/comments/moderation/bulk-reject', {
               method: 'POST',
               body: JSON.stringify({ ids: Array.from(selectedComments) }),
+              redirectOn401: false,
+              cache: 'no-store',
             });
             success(`${selectedComments.size} comment${selectedComments.size !== 1 ? 's' : ''} marked as spam!`);
             setSelectedComments(new Set());

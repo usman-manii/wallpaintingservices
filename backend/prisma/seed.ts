@@ -37,7 +37,7 @@ async function main() {
       role: Role.ADMINISTRATOR,
     },
   });
-  console.log('Seeded Super Admin:', superAdmin.email);
+  console.log(`Seeded Super Admin: ${superAdmin.email}`);
   
   // Create Editor
   const editor = await prisma.user.upsert({
