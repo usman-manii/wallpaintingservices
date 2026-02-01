@@ -2,45 +2,71 @@
 
 import AdminSidebar from '@/components/AdminSidebar';
 import AdminNavbar from '@/components/AdminNavbar';
-import Breadcrumbs from '@/components/Breadcrumbs';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { ToastProvider } from '@/components/ui/Toast';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, useRef } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { AdminSessionProvider, useAdminSession } from '@/contexts/AdminSessionContext';
 
 function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const { loading, role, user, logout, refreshSession } = useAdminSession();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const hasRedirectedRef = useRef(false);
 
   useEffect(() => {
-    // Cookie-based auth: we assume presence of session cookies; role cached locally for UX
-    const role = localStorage.getItem('user_role');
-    setUserRole(role);
-    setIsAuthenticated(true);
-    setIsLoading(false);
-
+    if (typeof window === 'undefined') return;
+    
     const updateLayout = () => {
       const sidebar = document.querySelector('aside');
       if (sidebar) {
         setIsCollapsed(sidebar.classList.contains('w-20'));
       }
     };
-
+    
+    // Initial check
     updateLayout();
-    const observer = new MutationObserver(updateLayout);
+    
+    // Watch for sidebar class changes
     const sidebar = document.querySelector('aside');
-    if (sidebar) {
-      observer.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+    if (!sidebar) return;
+    
+    const observer = new MutationObserver(updateLayout);
+    observer.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+    
+    return () => observer.disconnect();
+  }, []); // Empty deps - only run once on mount
+
+  // Reset redirect flag when pathname changes (user navigated somewhere new)
+  useEffect(() => {
+    hasRedirectedRef.current = false;
+  }, [pathname]);
+
+  // Handle authentication redirects - Only redirect once per navigation
+  useEffect(() => {
+    // CRITICAL: Don't redirect if already redirected, still loading, or during SSR
+    if (hasRedirectedRef.current || loading || typeof window === 'undefined') return;
+
+    const isAdminRole = role === 'ADMINISTRATOR' || role === 'SUPER_ADMIN' || role === 'EDITOR';
+
+    // Redirect unauthenticated users to login
+    if (!role) {
+      hasRedirectedRef.current = true;
+      const returnTo = pathname && pathname !== '/dashboard' ? pathname : '/dashboard';
+      router.replace(`/auth?next=${encodeURIComponent(returnTo)}`);
+      return;
     }
 
-    return () => observer.disconnect();
-  }, [router]);
+    // Redirect non-admin users to profile
+    if (!isAdminRole) {
+      hasRedirectedRef.current = true;
+      router.replace('/profile');
+      return;
+    }
+  }, [loading, role, pathname, router]);
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
         <div className="text-slate-500 dark:text-slate-400">Loading...</div>
@@ -48,19 +74,13 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (isAuthenticated === false) {
+  const isAdminRole = role === 'ADMINISTRATOR' || role === 'SUPER_ADMIN' || role === 'EDITOR';
+
+  // Show loading state while redirecting
+  if (!role || !isAdminRole) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 gap-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Sign in required</h1>
-          <p className="text-slate-600 dark:text-slate-400">You need to sign in to access the dashboard.</p>
-        </div>
-        <button
-          className="px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
-          onClick={() => router.push('/auth')}
-        >
-          Go to Sign In
-        </button>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="text-slate-500 dark:text-slate-400">Redirecting...</div>
       </div>
     );
   }
@@ -104,6 +124,12 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AdminLayoutContent>{children}</AdminLayoutContent>
+    <ThemeProvider>
+      <ToastProvider>
+        <AdminSessionProvider>
+          <AdminLayoutContent>{children}</AdminLayoutContent>
+        </AdminSessionProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
