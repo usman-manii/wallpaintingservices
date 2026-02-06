@@ -70,12 +70,19 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:test_password@localhost:5432/test_db?schema=public
       
-      - name: Run tests
-        run: npm test --workspace=backend
+      - name: Run tests with coverage
+        run: npm run test:cov --workspace=backend
         env:
           DATABASE_URL: postgresql://postgres:test_password@localhost:5432/test_db?schema=public
           JWT_SECRET: test-jwt-secret-key-for-ci-testing-only
           APP_SECRET: test-app-secret-key-for-ci-testing-only
+      
+      - name: Upload backend coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: backend/coverage/lcov.info
+          flags: backend
+          fail_ci_if_error: false
 
   test-frontend:
     name: Test Frontend
@@ -92,8 +99,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Run tests
-        run: npm test --workspace=frontend
+      - name: Run tests with coverage
+        run: npm run test:coverage --workspace=frontend
+      
+      - name: Upload frontend coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: frontend/coverage/lcov.info
+          flags: frontend
+          fail_ci_if_error: false
 
   build-backend:
     name: Build Backend
