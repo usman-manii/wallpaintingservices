@@ -11,6 +11,11 @@ interface BreadcrumbItem {
   href?: string;
 }
 
+type PageLookup = {
+  title?: string;
+  slug?: string;
+};
+
 export default function Breadcrumbs() {
   const pathname = usePathname();
    const [idLabels, setIdLabels] = useState<Record<string, string>>({});
@@ -33,7 +38,7 @@ export default function Breadcrumbs() {
 
       // Fallback: short descriptive ID
       if (!idLabels[path] && path.length > 16 && path.includes('-')) {
-        label = `ID ${path.slice(0, 8)}…`;
+        label = `ID ${path.slice(0, 8)}...`;
       }
 
       breadcrumbs.push({
@@ -59,7 +64,7 @@ export default function Breadcrumbs() {
 
     idsToLookup.forEach(async (id) => {
       try {
-        const data = await fetchAPI(`/pages/${id}`);
+        const data = await fetchAPI<PageLookup>(`/pages/${id}`);
         const title = data?.title || data?.slug;
         if (!title) return;
         setIdLabels(prev => ({
@@ -93,3 +98,4 @@ export default function Breadcrumbs() {
     </nav>
   );
 }
+

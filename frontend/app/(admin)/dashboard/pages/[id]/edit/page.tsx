@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -10,6 +12,71 @@ import RichTextEditor from '@/components/editor/RichTextEditor';
 import { FieldLabel } from '@/components/ui/HelpText';
 import { useToast } from '@/components/ui/Toast';
 import { fetchAPI } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-utils';
+
+type PageStatus = 'DRAFT' | 'PUBLISHED';
+
+type PageFormData = {
+  title: string;
+  slug: string;
+  content: string;
+  status: PageStatus;
+  seoTitle: string;
+  seoDescription: string;
+  seoKeywords: string[];
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseStringArray = (value: unknown): string[] => (
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+);
+
+const parseStatus = (value: unknown): PageStatus => (
+  value === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT'
+);
+
+const parsePageContent = (value: unknown): string => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (isRecord(value) && Array.isArray(value.sections)) {
+    return value.sections
+      .map((section) => {
+        if (!isRecord(section)) {
+          return '';
+        }
+        const type = parseString(section.type);
+        if (type === 'text' && isRecord(section.content)) {
+          return parseString(section.content.html);
+        }
+        return '';
+      })
+      .join('');
+  }
+  return '';
+};
+
+const parsePageResponse = (value: unknown): PageFormData | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return {
+    title: parseString(value.title),
+    slug: parseString(value.slug),
+    content: parsePageContent(value.content),
+    status: parseStatus(value.status),
+    seoTitle: parseString(value.seoTitle),
+    seoDescription: parseString(value.seoDescription),
+    seoKeywords: parseStringArray(value.seoKeywords),
+  };
+};
 
 export default function PageEditPage() {
   const router = useRouter();
@@ -21,14 +88,14 @@ export default function PageEditPage() {
   const [saving, setSaving] = useState(false);
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/$/, '');
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<PageFormData>({
     title: '',
     slug: '',
     content: '',
-    status: 'DRAFT' as 'DRAFT' | 'PUBLISHED',
+    status: 'DRAFT',
     seoTitle: '',
     seoDescription: '',
-    seoKeywords: [] as string[],
+    seoKeywords: [],
   });
   const [customSlug, setCustomSlug] = useState(false);
   const seoTitleLength = formData.seoTitle.length;
@@ -63,41 +130,20 @@ export default function PageEditPage() {
     try {
       setLoading(true);
       const data = await fetchAPI(`/pages/${pageId}`, { redirectOn401: false, cache: 'no-store' });
-      if (data) {
-        // Extract content from page builder format or use simple content
-        let content = '';
-        if (typeof data.content === 'string') {
-          content = data.content;
-        } else if (data.content?.sections) {
-          // Convert page builder sections to HTML (simplified)
-          content = data.content.sections
-            .map((section: any) => {
-              if (section.type === 'text' && section.content?.html) {
-                return section.content.html;
-              }
-              return '';
-            })
-            .join('');
-        }
-
-        setFormData({
-          title: data.title || '',
-          slug: data.slug || '',
-          content: content,
-          status: data.status || 'DRAFT',
-          seoTitle: data.seoTitle || '',
-          seoDescription: data.seoDescription || '',
-          seoKeywords: data.seoKeywords || [],
-        });
+      const parsed = parsePageResponse(data);
+      if (parsed) {
+        setFormData(parsed);
         setCustomSlug(false);
+      } else {
+        showError('Failed to load page data.');
       }
-    } catch (error: any) {
-      console.error('Error fetching page:', error);
-      showError(error.message || 'Failed to load page');
+    } catch (error: unknown) {
+      logger.error('Error fetching page:', error);
+      showError(getErrorMessage(error, 'Failed to load page'));
     } finally {
       setLoading(false);
     }
-  }, [pageId]);
+  }, [pageId, showError]);
 
   useEffect(() => {
     if (!isNew) {
@@ -119,9 +165,15 @@ export default function PageEditPage() {
         redirectOn401: false,
         cache: 'no-store',
       });
-      return response.url || response.path || '';
-    } catch (error: any) {
-      showError(error.message || 'Failed to upload image');
+      if (isRecord(response)) {
+        const url = parseString(response.url) || parseString(response.path);
+        if (url) {
+          return url;
+        }
+      }
+      throw new Error('Upload completed but no URL returned');
+    } catch (error: unknown) {
+      showError(getErrorMessage(error, 'Failed to upload image'));
       throw error;
     }
   };
@@ -176,7 +228,12 @@ export default function PageEditPage() {
           cache: 'no-store',
         });
         success(publish ? 'Page published successfully!' : 'Page saved as draft');
-        router.push(`/dashboard/pages/${newPage.id}/edit`);
+        const newPageId = isRecord(newPage) ? parseString(newPage.id) : '';
+        if (!newPageId) {
+          showError('Page saved, but the response was missing the page ID.');
+          return;
+        }
+        router.push(`/dashboard/pages/${newPageId}/edit`);
       } else {
         await fetchAPI(`/pages/${pageId}`, {
           method: 'PUT',
@@ -187,9 +244,9 @@ export default function PageEditPage() {
         success(publish ? 'Page published successfully!' : 'Page saved');
         fetchPage();
       }
-    } catch (error: any) {
-      console.error('Error saving page:', error);
-      showError(error.message || 'Failed to save page');
+    } catch (error: unknown) {
+      logger.error('Error saving page:', error);
+      showError(getErrorMessage(error, 'Failed to save page'));
     } finally {
       setSaving(false);
     }
@@ -405,3 +462,5 @@ export default function PageEditPage() {
     </div>
   );
 }
+
+

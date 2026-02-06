@@ -8,6 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Lock } from 'lucide-react';
+import logger from '@/lib/logger';
+import { getErrorMessage } from '@/lib/error-utils';
+import PasswordRules from '@/components/auth/PasswordRules';
+import { getPasswordValidationMessage } from '@/lib/passwordRules';
 
 function ResetPasswordForm() {
     const router = useRouter();
@@ -34,6 +38,12 @@ function ResetPasswordForm() {
           setError('Passwords do not match');
           return;
       }
+
+      const validationError = getPasswordValidationMessage(password);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
   
       setStatus('loading');
       setMessage('');
@@ -52,11 +62,10 @@ function ResetPasswordForm() {
             router.push('/login');
         }, 2000);
   
-      } catch (err: any) {
+      } catch (err: unknown) {
+        logger.error('Reset password failed', err, { component: 'ResetPasswordPage' });
         setStatus('error');
-        setMessage(err.message || 'Reset failed');
-      } finally {
-        if( status !== 'success') setStatus('error'); // keep error state if failed
+        setMessage(getErrorMessage(err, 'Reset failed'));
       }
     }
     
@@ -90,9 +99,10 @@ function ResetPasswordForm() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    minLength={6}
+                    minLength={12}
                   />
                 </div>
+                <PasswordRules password={password} />
               </div>
 
               <div className="space-y-2">
@@ -106,7 +116,7 @@ function ResetPasswordForm() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
-                    minLength={6}
+                    minLength={12}
                   />
                 </div>
               </div>

@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { log, logError } from './src/common/utils/cli-logger';
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
@@ -12,18 +13,18 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  console.log('Checking existing users...');
+  log('Checking existing users...');
   const users = await prisma.user.findMany();
-  console.log(`Found ${users.length} user(s)`);
+  log(`Found ${users.length} user(s)`);
   
   users.forEach(u => {
-    console.log(`- ${u.email}: ${u.role}`);
+    log(`- ${u.email}: ${u.role}`);
   });
   
   const password = await bcrypt.hash('password123', 10);
   
   // Upsert Super Admin
-  console.log('\nUpserting admin@example.com as ADMINISTRATOR...');
+  log('Upserting admin@example.com as ADMINISTRATOR...');
   await prisma.user.upsert({
     where: { email: 'admin@example.com' },
     update: { role: Role.ADMINISTRATOR },
@@ -38,7 +39,7 @@ async function main() {
   });
   
   // Upsert Editor
-  console.log('Upserting editor@example.com as EDITOR...');
+  log('Upserting editor@example.com as EDITOR...');
   await prisma.user.upsert({
     where: { email: 'editor@example.com' },
     update: {},
@@ -53,7 +54,7 @@ async function main() {
   });
   
   // Upsert Author
-  console.log('Upserting author@example.com as AUTHOR...');
+  log('Upserting author@example.com as AUTHOR...');
   await prisma.user.upsert({
     where: { email: 'author@example.com' },
     update: {},
@@ -67,16 +68,16 @@ async function main() {
     },
   });
   
-  console.log('\nFinal user list:');
+  log('Final user list:');
   const finalUsers = await prisma.user.findMany();
   finalUsers.forEach(u => {
-    console.log(`✓ ${u.email}: ${u.role}`);
+    log(`[SEED] ${u.email}: ${u.role}`);
   });
 }
 
 main()
   .catch((e) => {
-    console.error('Error:', e);
+    logError('Error:', e);
     process.exit(1);
   })
   .finally(async () => {

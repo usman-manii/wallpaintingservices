@@ -1,9 +1,10 @@
-import { PrismaClient, Prisma, Role, PostStatus } from '@prisma/client';
+import { PrismaClient, Prisma, Role, PostStatus, Category, Tag, Media } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { log, logError } from '../src/common/utils/cli-logger';
 
 // Load environment from backend .env
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -11,7 +12,7 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
-  console.error('DATABASE_URL not found. Current Env:', process.env);
+  logError('DATABASE_URL not found. Current Env:', process.env);
   throw new Error('DATABASE_URL is not defined in environment');
 }
 
@@ -20,7 +21,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function clearContent() {
-  console.log('🧹 Clearing existing blog-related data...');
+  log('[SEED] Clearing existing blog-related data...');
 
   await prisma.$transaction([
     prisma.internalLink.deleteMany({}),
@@ -30,11 +31,11 @@ async function clearContent() {
     prisma.category.deleteMany({}),
   ]);
 
-  console.log('✅ Cleared posts, comments, tags, categories, and internal links');
+  log('[SEED] Cleared posts, comments, tags, categories, and internal links');
 }
 
 async function seedUsers() {
-  console.log('👥 Seeding users...');
+  log('[SEED] Seeding users...');
   const password = await bcrypt.hash('password123', 10);
 
   const admin = await prisma.user.upsert({
@@ -79,12 +80,12 @@ async function seedUsers() {
     },
   });
 
-  console.log('✅ Users ready:', [admin.email, editor.email, author.email]);
+  log('[SEED] Users ready:', [admin.email, editor.email, author.email]);
   return { admin, editor, author };
 }
 
 async function seedTaxonomy() {
-  console.log('🏷  Seeding categories and tags...');
+  log('[SEED] Seeding categories and tags...');
 
   const categories = await Promise.all([
     prisma.category.upsert({
@@ -182,12 +183,12 @@ async function seedTaxonomy() {
     });
   }
 
-  console.log('✅ Categories:', categories.length, 'Tags:', tags.length);
+  log('[SEED] Categories:', categories.length, 'Tags:', tags.length);
   return { categories, tags };
 }
 
 async function seedMedia(adminId: string) {
-  console.log('🖼  Seeding media library...');
+  log('[SEED] Seeding media library...');
   const imageUrls = [
     'https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=1600',
     'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=1600',
@@ -222,7 +223,7 @@ async function seedMedia(adminId: string) {
     }
     media.push(record);
   }
-  console.log('✅ Media items:', media.length);
+  log('[SEED] Media items:', media.length);
   return media;
 }
 
@@ -243,16 +244,14 @@ function buildSeo(title: string, excerpt: string, keywords: string[]): Pick<
 
 async function seedPosts(
   authorId: string,
-  categories: Prisma.CategoryUncheckedCreateInput[],
-  tags: Prisma.TagUncheckedCreateInput[],
-  media: any[],
+  categories: Category[],
+  tags: Tag[],
+  media: Media[],
 ) {
-  console.log('📝 Seeding demo posts with SEO, tags, media, and comments...');
+  log('[SEED] Seeding demo posts with SEO, tags, media, and comments...');
 
-  const baseFeatured =
-    media.length > 0
-      ? media[0].url
-      : 'https://images.unsplash.com/photo-1505691723518-36a5ac3be353?q=80&w=1200&auto=format&fit=crop';
+  const baseFeatured = media[0]?.url
+    ?? 'https://images.unsplash.com/photo-1505691723518-36a5ac3be353?q=80&w=1200&auto=format&fit=crop';
 
   const demoPosts: Array<{
     title: string;
@@ -278,7 +277,8 @@ async function seedPosts(
     const title = `Demo Wall Painting Post ${i}`;
     const slug = `demo-wall-painting-post-${i}`;
     const excerpt = `Demo post ${i} exploring professional wall painting services, color psychology, and maintenance tips for UAE properties.`;
-    const mediaItem = media[i % media.length] || { url: baseFeatured };
+    const mediaItem = media[i % media.length];
+    const mediaUrl = mediaItem?.url ?? baseFeatured;
     const videoEmbed =
       i % 2 === 0
         ? `<div class="video"><iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ" title="YouTube video" frameborder="0" allowfullscreen></iframe></div>`
@@ -290,7 +290,7 @@ async function seedPosts(
         <p>This is a richly formatted demo article used to populate the CMS. It covers wall preparation, primer selection, and color combinations that work well in UAE light conditions.</p>
         <h3>Before & After Transformation</h3>
         <p>We transformed a dull living room into a bright, inviting space using high-quality, low-VOC paints.</p>
-        <img src="${mediaItem.url}" alt="Project photo ${i}" style="width:100%;border-radius:12px;margin:16px 0;" />
+        <img src="${mediaUrl}" alt="Project photo ${i}" style="width:100%;border-radius:12px;margin:16px 0;" />
         ${videoEmbed}
         <p><strong>Tip:</strong> Always test a sample patch on your walls before committing to a full room paint.</p>
       </article>
@@ -332,14 +332,14 @@ async function seedPosts(
       scheduledOffsetDays,
       tagSlugs,
       categorySlugs,
-      mediaUrl: mediaItem.url,
+      mediaUrl,
     });
   }
 
   for (const p of demoPosts) {
     const existing = await prisma.post.findUnique({ where: { slug: p.slug } });
     if (existing) {
-      console.log(`↷ Skipping existing post: ${p.slug}`);
+      log(`[SEED] Skipping existing post: ${p.slug}`);
       continue;
     }
 
@@ -406,7 +406,7 @@ async function seedPosts(
       ],
     });
 
-    console.log(`✓ Created demo post: ${p.title}`);
+    log(`[SEED] Created demo post: ${p.title}`);
   }
 
   // Update usage counts and trending flags based on seeded posts
@@ -429,16 +429,72 @@ async function seedPosts(
   }
 }
 
+async function seedNotifications(adminId: string) {
+  const existing = await prisma.notification.count();
+  if (existing > 0) {
+    log('[SEED] Notifications already exist. Skipping notification seeding.');
+    return;
+  }
+
+  const now = new Date();
+  await prisma.notification.createMany({
+    data: [
+      {
+        title: 'System Maintenance Window',
+        message: 'Scheduled maintenance tonight from 02:00 to 03:00 UTC. Expect brief downtime.',
+        category: 'ALERT',
+        type: 'SYSTEM',
+        priority: 'HIGH',
+        status: 'SENT',
+        audience: 'ALL',
+        channels: ['IN_APP', 'EMAIL'],
+        isSticky: true,
+        sendAt: now,
+        createdById: adminId,
+      },
+      {
+        title: 'New Editorial Workflow',
+        message: 'Editors can now approve AI drafts directly from the dashboard.',
+        category: 'UPDATE',
+        type: 'INFO',
+        priority: 'NORMAL',
+        status: 'SENT',
+        audience: 'ROLE',
+        channels: ['IN_APP'],
+        targetRoles: ['EDITOR', 'ADMINISTRATOR'],
+        sendAt: now,
+        createdById: adminId,
+      },
+      {
+        title: 'Security Review Reminder',
+        message: 'Complete the quarterly access review before the end of the week.',
+        category: 'ALERT',
+        type: 'SECURITY',
+        priority: 'URGENT',
+        status: 'SCHEDULED',
+        audience: 'ROLE',
+        channels: ['IN_APP', 'EMAIL'],
+        targetRoles: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+        sendAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdById: adminId,
+      },
+    ],
+  });
+
+  log('[SEED] Notifications seeded.');
+}
+
 async function main() {
   try {
     await clearContent();
     const { admin } = await seedUsers();
     const { categories, tags } = await seedTaxonomy();
     const media = await seedMedia(admin.id);
-    await seedPosts(admin.id, categories as any, tags as any, media);
-    console.log('🎉 Demo content seeding complete.');
+    await seedPosts(admin.id, categories, tags, media);
+    await seedNotifications(admin.id);
+    log('[SEED] Demo content seeding complete.');
   } catch (err) {
-    console.error('Seed error:', err);
+    logError('Seed error:', err);
     process.exit(1);
   } finally {
     await prisma.$disconnect();

@@ -162,6 +162,21 @@ export class CommentModerationService {
   }
 
   /**
+   * Get all comments for moderation (all statuses)
+   */
+  async getAllComments(options: { skip?: number; take?: number } = {}) {
+    return this.prisma.comment.findMany({
+      include: {
+        post: { select: { id: true, title: true, slug: true } },
+        user: { select: { username: true, displayName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: options.skip || 0,
+      take: options.take || 50,
+    });
+  }
+
+  /**
    * Approve comment
    */
   async approveComment(id: string, moderatorId: string) {

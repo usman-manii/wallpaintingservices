@@ -19,8 +19,17 @@ declare namespace NodeJS {
     // Security
     JWT_SECRET: string;
     JWT_EXPIRATION?: string;
+    JWT_ACCESS_EXPIRES?: string;
+    JWT_REFRESH_EXPIRES?: string;
+    JWT_REFRESH_SECRET?: string;
+    JWT_ACCESS_MAXAGE_MS?: string;
+    JWT_REFRESH_MAXAGE_MS?: string;
     APP_SECRET: string;
-    COOKIE_SECRET?: string;
+    COOKIE_SECRET: string;
+    COOKIE_SECURE?: string;
+    COOKIE_SAMESITE?: string;
+    COOKIE_DOMAIN?: string;
+    TRUST_PROXY?: string;
 
     // AI/LLM
     AI_API_KEY: string;
@@ -36,6 +45,11 @@ declare namespace NodeJS {
     RECAPTCHA_V3_SECRET_KEY?: string;
 
     // Email/SMTP
+    MAIL_HOST?: string;
+    MAIL_PORT?: string;
+    MAIL_USER?: string;
+    MAIL_PASS?: string;
+    MAIL_FROM?: string;
     SMTP_HOST?: string;
     SMTP_PORT?: string;
     SMTP_SECURE?: string;
@@ -91,7 +105,7 @@ declare global {
         id: string;
         email: string;
         role: string;
-        capabilities?: any;
+        capabilities?: string[];
       };
       requestId?: string;
     }

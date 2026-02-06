@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Tooltip, InfoTooltip } from '@/components/ui/Tooltip';
 import { InlineMessage } from '@/components/ui/InlineMessage';
 import { Tag as TagIcon, Plus, Edit, Trash2, Merge, TrendingUp, Star, Hash, Search, X } from 'lucide-react';
+import { getErrorMessage } from '@/lib/error-utils';
 
 type Tag = {
   id: string;
@@ -34,6 +37,162 @@ type Tag = {
   synonymHits?: number;
 };
 
+type TagFormData = {
+  name: string;
+  slug: string;
+  description: string;
+  color: string;
+  icon: string;
+  parentId: string;
+  featured: boolean;
+  synonymsText: string;
+  linkedTagIds: string[];
+  locked: boolean;
+};
+
+type DuplicateTagSummary = {
+  id: string;
+  name: string;
+};
+
+type DuplicateTagPair = {
+  a: DuplicateTagSummary;
+  b: DuplicateTagSummary;
+  score: number;
+};
+
+const DEFAULT_TAG_FORM: TagFormData = {
+  name: '',
+  slug: '',
+  description: '',
+  color: '#3b82f6',
+  icon: '',
+  parentId: '',
+  featured: false,
+  synonymsText: '',
+  linkedTagIds: [],
+  locked: false,
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseOptionalString = (value: unknown): string | undefined => {
+  const parsed = parseString(value).trim();
+  return parsed ? parsed : undefined;
+};
+
+const parseBoolean = (value: unknown, fallback = false): boolean => (
+  typeof value === 'boolean' ? value : fallback
+);
+
+const parseNumber = (value: unknown, fallback = 0): number => (
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
+
+const parseStringArray = (value: unknown): string[] => (
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+);
+
+const slugFromName = (name: string): string => (
+  name
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+);
+
+const parseTagSummary = (value: unknown): DuplicateTagSummary | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    name: parseString(value.name, 'Unknown tag'),
+  };
+};
+
+const parseTag = (value: unknown): Tag | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  const name = parseString(value.name);
+  if (!id || !name) {
+    return null;
+  }
+  const slug = parseString(value.slug) || slugFromName(name);
+  const parentRaw = isRecord(value.parent) ? value.parent : null;
+  const parentId = parentRaw ? parseString(parentRaw.id) : '';
+  const parentName = parentRaw ? parseString(parentRaw.name) : '';
+  const parent = parentId ? { id: parentId, name: parentName || parentId } : undefined;
+  const children = Array.isArray(value.children)
+    ? value.children.map(parseTag).filter((child): child is Tag => !!child)
+    : undefined;
+  const posts = Array.isArray(value.posts)
+    ? value.posts
+        .map((post) => {
+          if (!isRecord(post)) {
+            return null;
+          }
+          const postId = parseString(post.id);
+          return postId ? { id: postId } : null;
+        })
+        .filter((post): post is { id: string } => !!post)
+    : undefined;
+  const synonyms = parseStringArray(value.synonyms);
+  const linkedTagIds = parseStringArray(value.linkedTagIds);
+  return {
+    id,
+    name,
+    slug,
+    description: parseOptionalString(value.description),
+    color: parseOptionalString(value.color),
+    icon: parseOptionalString(value.icon),
+    usageCount: parseNumber(value.usageCount),
+    trending: parseBoolean(value.trending),
+    featured: parseBoolean(value.featured),
+    parent,
+    children,
+    posts,
+    synonyms: synonyms.length > 0 ? synonyms : undefined,
+    linkedTagIds: linkedTagIds.length > 0 ? linkedTagIds : undefined,
+    locked: parseBoolean(value.locked),
+    mergeCount: parseNumber(value.mergeCount),
+    synonymHits: parseNumber(value.synonymHits),
+  };
+};
+
+const parseTagsList = (value: unknown): Tag[] => (
+  Array.isArray(value) ? value.map(parseTag).filter((tag): tag is Tag => !!tag) : []
+);
+
+const parseDuplicatePair = (value: unknown): DuplicateTagPair | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const a = parseTagSummary(value.a);
+  const b = parseTagSummary(value.b);
+  if (!a || !b) {
+    return null;
+  }
+  return {
+    a,
+    b,
+    score: parseNumber(value.score),
+  };
+};
+
 export default function TagManagementPage() {
   const { success, error: showError, warning, info } = useToast();
   const { dialog, confirm } = useConfirmDialog();
@@ -41,44 +200,33 @@ export default function TagManagementPage() {
   const [loading, setLoading] = useState(false);
   const [usageBands, setUsageBands] = useState<{low: number; high: number}>({ low: 0, high: 0 });
   const [loadingDuplicates, setLoadingDuplicates] = useState(false);
-  const [duplicates, setDuplicates] = useState<any[]>([]);
+  const [duplicates, setDuplicates] = useState<DuplicateTagPair[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [formData, setFormData] = useState({
-    name: '',
-    slug: '',
-    description: '',
-    color: '#3b82f6',
-    icon: '',
-    parentId: '',
-    featured: false,
-    synonymsText: '',
-    linkedTagIds: [] as string[],
-    locked: false,
-  });
+  const [formData, setFormData] = useState<TagFormData>(DEFAULT_TAG_FORM);
 
   const fetchTags = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchAPI('/blog/admin/tags', { redirectOn401: false, cache: 'no-store' });
-      const list = Array.isArray(data) ? data : [];
+      const list = parseTagsList(data);
       setTags(list);
       // precompute usage bands for legend
       if (list.length > 0) {
-        const usage = list.map((t: Tag) => t.usageCount || 0).sort((a, b) => a - b);
+        const usage = list.map((tag) => tag.usageCount || 0).sort((a, b) => a - b);
         const p75 = usage[Math.floor(usage.length * 0.75)] || 0;
         const p50 = usage[Math.floor(usage.length * 0.5)] || 0;
         setUsageBands({ low: p50, high: p75 });
       } else {
         setUsageBands({ low: 0, high: 0 });
       }
-    } catch (error: any) {
-      console.error('Error fetching tags:', error);
-      showError(error.message || 'Failed to fetch tags');
+    } catch (error: unknown) {
+      logger.error('Error fetching tags:', error);
+      showError(getErrorMessage(error, 'Failed to fetch tags'));
     } finally {
       setLoading(false);
     }
@@ -121,9 +269,9 @@ export default function TagManagementPage() {
       setShowCreateModal(false);
       resetForm();
       fetchTags();
-    } catch (error: any) {
-      console.error('Error creating tag:', error);
-      showError(error.message || 'Failed to create tag');
+    } catch (error: unknown) {
+      logger.error('Error creating tag:', error);
+      showError(getErrorMessage(error, 'Failed to create tag'));
     }
   };
 
@@ -142,9 +290,9 @@ export default function TagManagementPage() {
       setEditingTag(null);
       resetForm();
       fetchTags();
-    } catch (error: any) {
-      console.error('Error updating tag:', error);
-      showError(error.message || 'Failed to update tag');
+    } catch (error: unknown) {
+      logger.error('Error updating tag:', error);
+      showError(getErrorMessage(error, 'Failed to update tag'));
     }
   };
 
@@ -161,17 +309,12 @@ export default function TagManagementPage() {
       </>,
       async () => {
         try {
-              try {
-            await fetchAPI(`/blog/admin/tags/${id}`, { method: 'DELETE', redirectOn401: false, cache: 'no-store' });
-            success('Tag deleted successfully!');
-            fetchTags();
-          } catch (error: any) {
-            console.error('Error deleting tag:', error);
-            showError(error.message || 'Failed to delete tag');
-          }
-        } catch (error) {
-          console.error('Error deleting tag:', error);
-          showError('Failed to delete tag');
+          await fetchAPI(`/blog/admin/tags/${id}`, { method: 'DELETE', redirectOn401: false, cache: 'no-store' });
+          success('Tag deleted successfully!');
+          fetchTags();
+        } catch (error: unknown) {
+          logger.error('Error deleting tag:', error);
+          showError(getErrorMessage(error, 'Failed to delete tag'));
         }
       },
       'danger'
@@ -221,9 +364,9 @@ export default function TagManagementPage() {
           setShowMergeModal(false);
           setMergeTargetId('');
           fetchTags();
-        } catch (error: any) {
-          console.error('Error merging tags:', error);
-          showError(error.message || 'Failed to merge tags');
+        } catch (error: unknown) {
+          logger.error('Error merging tags:', error);
+          showError(getErrorMessage(error, 'Failed to merge tags'));
         }
       },
       'danger'
@@ -242,9 +385,9 @@ export default function TagManagementPage() {
       });
       success('Parent updated for selected tags');
       fetchTags();
-    } catch (error: any) {
-      console.error('Bulk parent update error:', error);
-      showError(error.message || 'Failed to update parent');
+    } catch (error: unknown) {
+      logger.error('Bulk parent update error:', error);
+      showError(getErrorMessage(error, 'Failed to update parent'));
     }
   };
 
@@ -261,9 +404,9 @@ export default function TagManagementPage() {
       });
       success('Style updated');
       fetchTags();
-    } catch (error: any) {
-      console.error('Bulk style update error:', error);
-      showError(error.message || 'Failed to update style');
+    } catch (error: unknown) {
+      logger.error('Bulk style update error:', error);
+      showError(getErrorMessage(error, 'Failed to update style'));
     }
   };
 
@@ -278,9 +421,9 @@ export default function TagManagementPage() {
       });
       success(locked ? 'Tags locked' : 'Tags unlocked');
       fetchTags();
-    } catch (error: any) {
-      console.error('Bulk lock error:', error);
-      showError(error.message || 'Failed to update lock state');
+    } catch (error: unknown) {
+      logger.error('Bulk lock error:', error);
+      showError(getErrorMessage(error, 'Failed to update lock state'));
     }
   };
 
@@ -295,9 +438,9 @@ export default function TagManagementPage() {
       });
       success('Converted tags to categories');
       fetchTags();
-    } catch (error: any) {
-      console.error('Convert tags error:', error);
-      showError(error.message || 'Failed to convert tags');
+    } catch (error: unknown) {
+      logger.error('Convert tags error:', error);
+      showError(getErrorMessage(error, 'Failed to convert tags'));
     }
   };
 
@@ -305,28 +448,20 @@ export default function TagManagementPage() {
     setLoadingDuplicates(true);
     try {
       const data = await fetchAPI('/blog/admin/tags/duplicates', { redirectOn401: false, cache: 'no-store' });
-      setDuplicates(Array.isArray(data) ? data : []);
-    } catch (error: any) {
-      console.error('Duplicates fetch error:', error);
-      showError(error.message || 'Failed to fetch duplicates');
+      const list = Array.isArray(data)
+        ? data.map(parseDuplicatePair).filter((item): item is DuplicateTagPair => !!item)
+        : [];
+      setDuplicates(list);
+    } catch (error: unknown) {
+      logger.error('Duplicates fetch error:', error);
+      showError(getErrorMessage(error, 'Failed to fetch duplicates'));
     } finally {
       setLoadingDuplicates(false);
     }
   };
 
   const resetForm = () => {
-    setFormData({
-      name: '',
-      slug: '',
-      description: '',
-      color: '#3b82f6',
-      icon: '',
-      parentId: '',
-      featured: false,
-      synonymsText: '',
-      linkedTagIds: [],
-      locked: false,
-    });
+    setFormData(DEFAULT_TAG_FORM);
   };
 
   const openEditModal = (tag: Tag) => {
@@ -423,9 +558,9 @@ export default function TagManagementPage() {
             )}
           </div>
           <div className="text-sm text-slate-600 dark:text-slate-400">
-            {tag.slug} • {tag.usageCount} posts
-            {tag.description && ` • ${tag.description}`}
-            {tag.synonyms && tag.synonyms.length > 0 && ` • Synonyms: ${tag.synonyms.slice(0,3).join(', ')}${tag.synonyms.length>3?'…':''}`}
+            {tag.slug} - {tag.usageCount} posts
+            {tag.description && ` - ${tag.description}`}
+            {tag.synonyms && tag.synonyms.length > 0 && ` - Synonyms: ${tag.synonyms.slice(0,3).join(', ')}${tag.synonyms.length>3?'...':''}`}
           </div>
         </div>
 
@@ -482,7 +617,7 @@ export default function TagManagementPage() {
                 Unlock
               </Button>
               <Button variant="outline" onClick={handleConvertTags}>
-                Convert ➜ Category
+                Convert to Category
               </Button>
             </>
           )}
@@ -559,15 +694,15 @@ export default function TagManagementPage() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-lg font-semibold">Possible Duplicates</h3>
-                <p className="text-sm text-slate-500">Similarity score ≥ 0.28</p>
+                <p className="text-sm text-slate-500">Similarity score &gt;= 0.28</p>
               </div>
               {loadingDuplicates && <LoadingSpinner />}
             </div>
             <div className="space-y-2">
-              {duplicates.map((item: any, idx) => (
-                <div key={idx} className="flex items-center justify-between border rounded p-3">
+              {duplicates.map((item) => (
+                <div key={`${item.a.id}-${item.b.id}`} className="flex items-center justify-between border rounded p-3">
                   <div className="text-sm">
-                    <span className="font-semibold">{item.a.name}</span> ↔ <span className="font-semibold">{item.b.name}</span>
+                    <span className="font-semibold">{item.a.name}</span> to <span className="font-semibold">{item.b.name}</span>
                     <span className="text-slate-500 ml-2">score {item.score}</span>
                   </div>
                   <Button
@@ -697,7 +832,7 @@ export default function TagManagementPage() {
                       <Input
                         value={formData.icon}
                         onChange={(e) => setFormData(prev => ({ ...prev, icon: e.target.value }))}
-                        placeholder="🏷️ or icon-name"
+                        placeholder="icon or emoji"
                       />
                     </div>
                   </div>
@@ -840,3 +975,6 @@ export default function TagManagementPage() {
     </div>
   );
 }
+
+
+

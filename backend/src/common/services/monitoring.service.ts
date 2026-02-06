@@ -12,6 +12,14 @@ interface Metric {
   tags?: Record<string, string>;
 }
 
+type MetricSummary = {
+  count: number;
+  sum: number;
+  min: number;
+  max: number;
+  avg: number;
+};
+
 @Injectable()
 export class MonitoringService {
   private readonly logger = new Logger(MonitoringService.name);
@@ -52,8 +60,8 @@ export class MonitoringService {
   /**
    * Get metrics summary
    */
-  getSummary(): Record<string, any> {
-    const summary: Record<string, any> = {};
+  getSummary(): Record<string, MetricSummary> {
+    const summary: Record<string, MetricSummary> = {};
 
     // Group by metric name
     this.metrics.forEach((metric) => {

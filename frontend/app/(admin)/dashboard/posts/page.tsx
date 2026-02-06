@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
@@ -10,9 +12,10 @@ import { Badge } from '@/components/ui/Badge';
 import { LoadingSpinner, LoadingSkeleton } from '@/components/ui/LoadingSpinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { Trash2, Eye, Edit, Plus, Calendar, User, FileText, Clock } from 'lucide-react';
+import { Trash2, Eye, Edit, Plus, Calendar, User, FileText, Clock, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { fetchAPI } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-utils';
 
 interface Post {
   id: string;
@@ -23,6 +26,7 @@ interface Post {
   scheduledFor?: string;
   publishedAt?: string;
   createdAt: string;
+  commentCount?: number;
   author: {
     id: string;
     name: string;
@@ -32,6 +36,78 @@ interface Post {
   categories?: { name: string }[];
   tags?: { name: string }[];
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseNumber = (value: unknown, fallback = 0): number => (
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
+
+const parseNameList = (value: unknown): { name: string }[] => (
+  Array.isArray(value)
+    ? value
+        .map((item) => {
+          if (!isRecord(item)) {
+            return null;
+          }
+          const name = parseString(item.name);
+          return name ? { name } : null;
+        })
+        .filter((item): item is { name: string } => !!item)
+    : []
+);
+
+const parsePost = (value: unknown): Post | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  const title = parseString(value.title);
+  const slug = parseString(value.slug);
+  const excerpt = parseString(value.excerpt);
+  const status = parseString(value.status);
+  const createdAt = parseString(value.createdAt);
+  if (!id || !title || !slug || !status || !createdAt) {
+    return null;
+  }
+  const authorRaw = isRecord(value.author) ? value.author : null;
+  const authorId = authorRaw ? parseString(authorRaw.id) : '';
+  if (!authorId) {
+    return null;
+  }
+  const author = {
+    id: authorId,
+    name: parseString(authorRaw?.name),
+    username: parseString(authorRaw?.username),
+    displayName: parseString(authorRaw?.displayName),
+  };
+  const countRaw = isRecord(value._count) ? value._count : null;
+  const commentCount = countRaw ? parseNumber(countRaw.comments) : parseNumber(value.commentCount);
+  return {
+    id,
+    title,
+    slug,
+    excerpt,
+    status,
+    scheduledFor: parseString(value.scheduledFor) || undefined,
+    publishedAt: parseString(value.publishedAt) || undefined,
+    createdAt,
+    commentCount: commentCount || undefined,
+    author,
+    categories: parseNameList(value.categories),
+    tags: parseNameList(value.tags),
+  };
+};
+
+const parsePostsList = (value: unknown): Post[] => (
+  Array.isArray(value) ? value.map(parsePost).filter((post): post is Post => !!post) : []
+);
 
 type FilterStatus = 'all' | 'PUBLISHED' | 'DRAFT' | 'SCHEDULED';
 type SortOrder = 'latest' | 'oldest';
@@ -46,6 +122,8 @@ export default function PostsPage() {
   const [filterAuthor, setFilterAuthor] = useState<string>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('latest');
   const [authors, setAuthors] = useState<Array<{ id: string; name: string }>>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const fetchPosts = useCallback(async () => {
     setLoading(true);
@@ -56,44 +134,45 @@ export default function PostsPage() {
 
       const data = await fetchAPI(`/blog/admin/posts?${params.toString()}&_=${Date.now()}`, { redirectOn401: false, cache: 'no-store' });
 
-      // Validate that data is an array
-      if (!Array.isArray(data)) {
-        console.error('API returned non-array data:', data);
-        showError('Invalid data format received from server');
-        setPosts([]);
-        setAuthors([]);
-        return;
+      let rawList: unknown = [];
+      if (Array.isArray(data)) {
+        rawList = data;
+      } else if (isRecord(data)) {
+        rawList = data.items ?? data.posts ?? [];
       }
-      
-      setPosts(data);
-      
-      // Extract unique authors only if we have posts
-      if (data.length > 0) {
+
+      const list = parsePostsList(rawList);
+      setPosts(list);
+
+      if (list.length > 0) {
         const uniqueAuthors = Array.from(
-          new Map(data.map((post: Post) => [post.author.id, {
+          new Map(list.map((post) => [post.author.id, {
             id: post.author.id,
-            name: post.author.displayName || post.author.username
+            name: post.author.displayName || post.author.username || post.author.name
           }])).values()
         );
-        setAuthors(uniqueAuthors as Array<{ id: string; name: string }>);
+        setAuthors(uniqueAuthors);
       } else {
         setAuthors([]);
       }
-    } catch (error) {
-      console.error('Error fetching posts:', error);
-      showError('Failed to fetch posts');
+    } catch (error: unknown) {
+      logger.error('Error fetching posts:', error);
+      showError(getErrorMessage(error, 'Failed to fetch posts'));
       setPosts([]);
       setAuthors([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     fetchPosts();
   }, [fetchPosts]);
 
   // NOTE: We no longer refetch on filter changes; filters are applied client-side
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterStatus, filterAuthor, sortOrder, pageSize, posts.length]);
 
   const handleDelete = async (id: string, title: string) => {
     confirm(
@@ -101,21 +180,16 @@ export default function PostsPage() {
       `Are you sure you want to delete "${title}"? This action cannot be undone.`,
       async () => {
         try {
-          try {
-            await fetchAPI(`/blog/${id}`, {
-              method: 'DELETE',
-              redirectOn401: false,
-              cache: 'no-store',
-            });
-            success('Post deleted successfully');
-            fetchPosts();
-          } catch (error: any) {
-            console.error('Error deleting post:', error);
-            showError(error.message || 'Failed to delete post');
-          }
-        } catch (error) {
-          console.error('Error deleting post:', error);
-          showError('An error occurred while deleting');
+          await fetchAPI(`/blog/${id}`, {
+            method: 'DELETE',
+            redirectOn401: false,
+            cache: 'no-store',
+          });
+          success('Post deleted successfully');
+          fetchPosts();
+        } catch (error: unknown) {
+          logger.error('Error deleting post:', error);
+          showError(getErrorMessage(error, 'Failed to delete post'));
         }
       },
       'danger'
@@ -189,6 +263,11 @@ export default function PostsPage() {
     const bDate = new Date(b.createdAt).getTime();
     return sortOrder === 'oldest' ? aDate - bDate : bDate - aDate;
   });
+  const totalPages = Math.max(1, Math.ceil(sortedPosts.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const pageStart = (safePage - 1) * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, sortedPosts.length);
+  const paginatedPosts = sortedPosts.slice(pageStart, pageEnd);
 
   if (loading) {
     return (
@@ -298,7 +377,7 @@ export default function PostsPage() {
           title={filterStatus === 'all' ? 'No posts yet' : `No ${filterStatus.toLowerCase()} posts`}
           description={filterStatus === 'all' 
             ? "Start creating engaging content for your audience. Your first post is just a click away!" 
-            : `You don't have any ${filterStatus.toLowerCase()} posts at the moment.`}
+            : `You don't have ${filterStatus.toLowerCase()} posts at the moment.`}
           action={{
             label: 'Create Your First Post',
             onClick: () => router.push('/dashboard/posts/new'),
@@ -307,7 +386,49 @@ export default function PostsPage() {
         />
       ) : (
         <div className="space-y-4">
-          {sortedPosts.map((post) => (
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="text-sm text-slate-600 dark:text-slate-400">
+              Showing <span className="font-medium text-slate-900 dark:text-slate-200">{pageStart + 1}</span>
+              {' '}–{' '}
+              <span className="font-medium text-slate-900 dark:text-slate-200">{pageEnd}</span> of{' '}
+              <span className="font-medium text-slate-900 dark:text-slate-200">{sortedPosts.length}</span> posts
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-slate-500 dark:text-slate-400">Rows</label>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="px-2 py-1 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-sm"
+              >
+                {[10, 20, 50].map((size) => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={safePage === 1}
+                >
+                  Prev
+                </Button>
+                <span className="text-xs text-slate-600 dark:text-slate-400 px-2">
+                  Page {safePage} of {totalPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={safePage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {paginatedPosts.map((post) => (
             <Card key={post.id}>
               <CardContent className="p-6">
                 <div className="flex justify-between items-start">
@@ -326,14 +447,21 @@ export default function PostsPage() {
                           {post.author.displayName || post.author.username || post.author.name}
                         </div>
                       </Tooltip>
-                      <span>•</span>
+                      <span>|</span>
+                      <Tooltip content="Comment count">
+                        <div className="flex items-center gap-1">
+                          <MessageSquare className="w-4 h-4" />
+                          {post.commentCount ?? 0} comments
+                        </div>
+                      </Tooltip>
+                      <span>|</span>
                       <Tooltip content={getStatusDate(post)}>
                         <div className="flex items-center gap-1">
                           <Calendar className="w-4 h-4" />
                           {getStatusDate(post)}
                         </div>
                       </Tooltip>
-                      <span>•</span>
+                      <span>|</span>
                       <Tooltip content="View live post">
                         <Link 
                           href={`/blog/${post.slug}`}
@@ -342,6 +470,16 @@ export default function PostsPage() {
                         >
                           <Eye className="w-4 h-4" />
                           View Post
+                        </Link>
+                      </Tooltip>
+                      <span>|</span>
+                      <Tooltip content="Moderate comments">
+                        <Link
+                          href={`/dashboard/comments?postId=${post.id}`}
+                          className="text-blue-600 hover:underline flex items-center gap-1"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          Comments
                         </Link>
                       </Tooltip>
                     </div>
@@ -370,8 +508,50 @@ export default function PostsPage() {
               </CardContent>
             </Card>
           ))}
+
+          <div className="flex justify-center pt-2">
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCurrentPage(1)}
+                disabled={safePage === 1}
+              >
+                First
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={safePage === 1}
+              >
+                Prev
+              </Button>
+              <span className="text-xs text-slate-600 dark:text-slate-400 px-2">
+                Page {safePage} of {totalPages}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={safePage === totalPages}
+              >
+                Next
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={safePage === totalPages}
+              >
+                Last
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 }
+
+

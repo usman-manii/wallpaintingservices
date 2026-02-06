@@ -4,6 +4,24 @@ import { useEffect, useState, useCallback } from 'react';
 import { notFound } from 'next/navigation';
 import { fetchAPI } from '@/lib/api';
 import type { PageSection } from '@/lib/page-builder-types';
+import type { JsonValue } from '@/types/json';
+import { SafeHtml } from '@/components/SafeHtml';
+import logger from '@/lib/logger';
+import { getErrorMessage } from '@/lib/error-utils';
+import type {
+  HeroContent,
+  ContentSectionContent,
+  FeaturesContent,
+  CTAContent,
+  TestimonialsContent,
+  FormContent,
+  MediaContent,
+  PricingContent,
+  TeamContent,
+  StatsContent,
+  FAQContent,
+  GenericContent,
+} from '@/lib/page-renderer-content';
 
 interface PageData {
   id: string;
@@ -12,7 +30,7 @@ interface PageData {
   content:
     | {
         sections: PageSection[];
-        globalStyles: any;
+        globalStyles?: Record<string, JsonValue>;
       }
     | string;
   seoTitle?: string;
@@ -27,22 +45,21 @@ export default function DynamicPageRenderer({ slug }: { slug: string }) {
 
   const fetchPage = useCallback(async () => {
     try {
-      // Skip fetching if this is an admin route
       if (slug.startsWith('dashboard/') || slug.startsWith('auth/') || slug.startsWith('admin/')) {
         notFound();
         return;
       }
-      
-      const data = await fetchAPI(`/pages/slug/${slug}`);
+
+      const data = await fetchAPI<PageData>(`/pages/slug/${slug}`);
       if (!data) {
         notFound();
         return;
       }
       setPage(data);
-    } catch (error: any) {
-      // Only log non-404 errors to avoid console spam
-      if (error.message && !error.message.includes('404') && !error.message.includes('Not Found')) {
-        console.error('Error fetching page:', error);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, 'Failed to load page');
+      if (!message.includes('404') && !message.includes('Not Found')) {
+        logger.error('Error fetching page', error, { component: 'DynamicPageRenderer', slug });
       }
       notFound();
     } finally {
@@ -55,25 +72,22 @@ export default function DynamicPageRenderer({ slug }: { slug: string }) {
   }, [fetchPage]);
 
   useEffect(() => {
-    // SECURITY: Custom CSS injection is disabled due to XSS risks
-    // If you need this feature, implement proper CSP and sanitization
-    // Reference: Audit Report P3 - Script injection via customCss
     if (page?.customCss) {
-      console.warn('[Security] Custom CSS injection is disabled. Use theme customization instead.');
+      logger.warn('Custom CSS injection is disabled. Use theme customization instead.', {
+        component: 'DynamicPageRenderer',
+        slug,
+      });
     }
-  }, [page]);
+  }, [page, slug]);
 
   useEffect(() => {
-    // SECURITY: Custom JS injection is DISABLED due to critical XSS vulnerability
-    // If you absolutely need this feature:
-    // 1. Implement strict Content Security Policy with nonces
-    // 2. Use sandboxed iframes for custom scripts
-    // 3. Validate and sanitize all JavaScript code server-side
-    // Reference: Audit Report P3 - Direct script injection vulnerability
     if (page?.customJs) {
-      console.error('[Security] Custom JavaScript injection is disabled for security reasons.');
+      logger.error('Custom JavaScript injection is disabled for security reasons.', {
+        component: 'DynamicPageRenderer',
+        slug,
+      });
     }
-  }, [page]);
+  }, [page, slug]);
 
   if (loading) {
     return (
@@ -90,10 +104,9 @@ export default function DynamicPageRenderer({ slug }: { slug: string }) {
   return (
     <div className="min-h-screen">
       {typeof page.content === 'string' ? (
-        <div
-          className="container mx-auto px-4 py-12"
-          dangerouslySetInnerHTML={{ __html: page.content }}
-        />
+        <div className="container mx-auto px-4 py-12">
+          <SafeHtml html={page.content} as="div" />
+        </div>
       ) : (
         page.content?.sections?.map((section) => (
           <SectionRenderer key={section.id} section={section} />
@@ -117,7 +130,6 @@ function SectionRenderer({ section }: { section: PageSection }) {
     borderStyle: styles.border?.style || 'solid',
   };
 
-  // Render based on section type
   switch (section.type) {
     case 'hero':
       return <HeroSection section={section} style={sectionStyle} />;
@@ -143,17 +155,18 @@ function SectionRenderer({ section }: { section: PageSection }) {
       return <FAQSection section={section} style={sectionStyle} />;
     case 'divider':
       return <DividerSection section={section} style={sectionStyle} />;
-    case 'spacer':
-      return <div style={{ height: section.config.height || 60 }} />;
+    case 'spacer': {
+      const height = typeof section.config.height === 'number' ? section.config.height : 60;
+      return <div style={{ height }} />;
+    }
     default:
       return <GenericSection section={section} style={sectionStyle} />;
   }
 }
 
-// Section Components
 function HeroSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { title, subtitle, buttonText, buttonLink, backgroundImage } = section.content;
-  
+  const { title, subtitle, buttonText, buttonLink, backgroundImage } = section.content as HeroContent;
+
   return (
     <section style={style} className="relative overflow-hidden">
       {backgroundImage && (
@@ -175,23 +188,23 @@ function HeroSection({ section, style }: { section: PageSection; style: React.CS
 }
 
 function ContentSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { heading, text, leftColumn, rightColumn, columns } = section.content;
-  
+  const { heading, text, leftColumn, rightColumn, columns } = section.content as ContentSectionContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4">
         {heading && <h2 className="text-3xl font-bold mb-6">{heading}</h2>}
-        {text && <div dangerouslySetInnerHTML={{ __html: text }} />}
+        {text && <SafeHtml html={text} as="div" />}
         {leftColumn && rightColumn && (
           <div className="grid md:grid-cols-2 gap-8">
-            <div dangerouslySetInnerHTML={{ __html: leftColumn }} />
-            <div dangerouslySetInnerHTML={{ __html: rightColumn }} />
+            <SafeHtml html={leftColumn} as="div" />
+            <SafeHtml html={rightColumn} as="div" />
           </div>
         )}
         {columns && (
           <div className="grid md:grid-cols-3 gap-6">
-            {columns.map((col: any, i: number) => (
-              <div key={i} dangerouslySetInnerHTML={{ __html: col.content }} />
+            {columns.map((col, i) => (
+              <SafeHtml key={i} html={col.content || ''} as="div" />
             ))}
           </div>
         )}
@@ -201,14 +214,14 @@ function ContentSection({ section, style }: { section: PageSection; style: React
 }
 
 function FeaturesSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { title, features } = section.content;
-  
+  const { title, features } = section.content as FeaturesContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4">
         {title && <h2 className="text-3xl font-bold text-center mb-12">{title}</h2>}
         <div className="grid md:grid-cols-3 gap-8">
-          {features?.map((feature: any, i: number) => (
+          {features?.map((feature, i: number) => (
             <div key={i} className="text-center">
               <div className="text-4xl mb-4">{feature.icon}</div>
               <h3 className="text-xl font-semibold mb-2">{feature.title}</h3>
@@ -222,8 +235,8 @@ function FeaturesSection({ section, style }: { section: PageSection; style: Reac
 }
 
 function CTASection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { title, subtitle, buttonText, buttonLink, text, primaryButton, secondaryButton } = section.content;
-  
+  const { title, subtitle, buttonText, buttonLink, text, primaryButton, secondaryButton } = section.content as CTAContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4 text-center">
@@ -248,14 +261,14 @@ function CTASection({ section, style }: { section: PageSection; style: React.CSS
 }
 
 function TestimonialsSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { title, testimonials } = section.content;
-  
+  const { title, testimonials } = section.content as TestimonialsContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4">
         {title && <h2 className="text-3xl font-bold text-center mb-12">{title}</h2>}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {testimonials?.map((testimonial: any, i: number) => (
+          {testimonials?.map((testimonial, i: number) => (
             <div key={i} className="bg-white p-6 rounded-lg shadow-lg">
               <p className="text-slate-700 mb-4">"{testimonial.text}"</p>
               <div className="flex items-center">
@@ -276,8 +289,8 @@ function TestimonialsSection({ section, style }: { section: PageSection; style: 
 }
 
 function FormSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { title, subtitle, fields, placeholder, buttonText } = section.content;
-  
+  const { title, subtitle, fields, placeholder, buttonText } = section.content as FormContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4 max-w-2xl">
@@ -285,7 +298,7 @@ function FormSection({ section, style }: { section: PageSection; style: React.CS
         {subtitle && <p className="text-center text-slate-600 mb-8">{subtitle}</p>}
         <form className="space-y-4">
           {fields ? (
-            fields.map((field: any, i: number) => (
+            fields.map((field, i: number) => (
               <div key={i}>
                 {field.label && <label className="block text-sm font-medium mb-2">{field.label}</label>}
                 {field.type === 'textarea' ? (
@@ -308,14 +321,14 @@ function FormSection({ section, style }: { section: PageSection; style: React.CS
 }
 
 function MediaSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { images, videoUrl, title, description } = section.content;
-  
+  const { images, videoUrl, title, description } = section.content as MediaContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4">
         {images && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {images.map((img: any, i: number) => (
+            {images.map((img, i: number) => (
               <div key={i} className="aspect-square overflow-hidden rounded-lg">
                 <img src={img.url} alt={img.alt} className="w-full h-full object-cover" />
               </div>
@@ -337,14 +350,14 @@ function MediaSection({ section, style }: { section: PageSection; style: React.C
 }
 
 function PricingSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { title, plans } = section.content;
-  
+  const { title, plans } = section.content as PricingContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4">
         {title && <h2 className="text-3xl font-bold text-center mb-12">{title}</h2>}
         <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {plans?.map((plan: any, i: number) => (
+          {plans?.map((plan, i: number) => (
             <div key={i} className={`bg-white rounded-lg shadow-lg p-8 ${plan.highlighted ? 'ring-2 ring-blue-500 transform scale-105' : ''}`}>
               <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
               <div className="text-4xl font-bold text-blue-600 mb-2">
@@ -353,7 +366,7 @@ function PricingSection({ section, style }: { section: PageSection; style: React
               <ul className="space-y-3 mb-8">
                 {plan.features?.map((feature: string, j: number) => (
                   <li key={j} className="flex items-center text-slate-700">
-                    <span className="text-green-500 mr-2">✓</span> {feature}
+                    <span className="text-green-500 mr-2">*</span> {feature}
                   </li>
                 ))}
               </ul>
@@ -369,14 +382,14 @@ function PricingSection({ section, style }: { section: PageSection; style: React
 }
 
 function TeamSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { title, members } = section.content;
-  
+  const { title, members } = section.content as TeamContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4">
         {title && <h2 className="text-3xl font-bold text-center mb-12">{title}</h2>}
         <div className="grid md:grid-cols-4 gap-8">
-          {members?.map((member: any, i: number) => (
+          {members?.map((member, i: number) => (
             <div key={i} className="text-center">
               {member.image && (
                 <img src={member.image} alt={member.name} className="w-32 h-32 rounded-full mx-auto mb-4 object-cover" />
@@ -393,13 +406,13 @@ function TeamSection({ section, style }: { section: PageSection; style: React.CS
 }
 
 function StatsSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { stats } = section.content;
-  
+  const { stats } = section.content as StatsContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-          {stats?.map((stat: any, i: number) => (
+          {stats?.map((stat, i: number) => (
             <div key={i} className="text-center">
               <div className="text-4xl mb-2">{stat.icon}</div>
               <div className="text-4xl font-bold text-white mb-2">{stat.number}</div>
@@ -413,14 +426,14 @@ function StatsSection({ section, style }: { section: PageSection; style: React.C
 }
 
 function FAQSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
-  const { title, faqs } = section.content;
-  
+  const { title, faqs } = section.content as FAQContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4 max-w-3xl">
         {title && <h2 className="text-3xl font-bold text-center mb-12">{title}</h2>}
         <div className="space-y-4">
-          {faqs?.map((faq: any, i: number) => (
+          {faqs?.map((faq, i: number) => (
             <details key={i} className="bg-white rounded-lg shadow p-6">
               <summary className="font-semibold cursor-pointer">{faq.question}</summary>
               <p className="mt-4 text-slate-600">{faq.answer}</p>
@@ -443,12 +456,14 @@ function DividerSection({ section, style }: { section: PageSection; style: React
 }
 
 function GenericSection({ section, style }: { section: PageSection; style: React.CSSProperties }) {
+  const content = section.content as GenericContent;
+
   return (
     <section style={style}>
       <div className="container mx-auto px-4">
-        {section.content.title && <h2 className="text-3xl font-bold mb-6">{section.content.title}</h2>}
-        {section.content.subtitle && <p className="text-xl text-slate-600 mb-4">{section.content.subtitle}</p>}
-        {section.content.text && <div dangerouslySetInnerHTML={{ __html: section.content.text }} />}
+        {content.title && <h2 className="text-3xl font-bold mb-6">{content.title}</h2>}
+        {content.subtitle && <p className="text-xl text-slate-600 mb-4">{content.subtitle}</p>}
+        {content.text && <SafeHtml html={content.text} as="div" />}
       </div>
     </section>
   );

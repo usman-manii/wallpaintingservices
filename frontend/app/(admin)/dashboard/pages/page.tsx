@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -9,6 +11,7 @@ import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { fetchAPI } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-utils';
 import { 
   Plus, Search, Filter, Eye, Edit2, Trash2, Copy, 
   Globe, Clock, MoreVertical, FileText, Layout, CheckCircle, Shield, RefreshCw
@@ -42,6 +45,36 @@ const RESERVED_SLUGS = new Set([
   'settings',
 ]);
 
+function parsePage(value: unknown): Page | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== 'string') return null;
+  const status =
+    obj.status === 'DRAFT' || obj.status === 'PUBLISHED' || obj.status === 'SCHEDULED' || obj.status === 'ARCHIVED'
+      ? obj.status
+      : 'DRAFT';
+  const pageType =
+    obj.pageType === 'STATIC' || obj.pageType === 'DYNAMIC' || obj.pageType === 'TEMPLATE' || obj.pageType === 'HOMEPAGE' || obj.pageType === 'LANDING'
+      ? obj.pageType
+      : 'STATIC';
+  const authorObj = obj.author && typeof obj.author === 'object' ? (obj.author as Record<string, unknown>) : null;
+  return {
+    id: obj.id,
+    title: typeof obj.title === 'string' ? obj.title : 'Untitled',
+    slug: typeof obj.slug === 'string' ? obj.slug : '',
+    status,
+    pageType,
+    isPolicyPage: typeof obj.isPolicyPage === 'boolean' ? obj.isPolicyPage : undefined,
+    usePageBuilder: typeof obj.usePageBuilder === 'boolean' ? obj.usePageBuilder : undefined,
+    viewCount: typeof obj.viewCount === 'number' ? obj.viewCount : 0,
+    author: authorObj && typeof authorObj.username === 'string' ? { username: authorObj.username } : { username: 'Unknown' },
+    createdAt: typeof obj.createdAt === 'string' ? obj.createdAt : new Date().toISOString(),
+    updatedAt: typeof obj.updatedAt === 'string' ? obj.updatedAt : new Date().toISOString(),
+    publishedAt: typeof obj.publishedAt === 'string' ? obj.publishedAt : undefined,
+    isSystem: typeof obj.isSystem === 'boolean' ? obj.isSystem : false,
+  };
+}
+
 export default function PagesManagementPage() {
   const router = useRouter();
   const { success, error: showError } = useToast();
@@ -60,90 +93,66 @@ export default function PagesManagementPage() {
       if (statusFilter !== 'ALL') params.append('status', statusFilter);
       if (typeFilter !== 'ALL') params.append('pageType', typeFilter);
 
-      console.log('🔍 Fetching pages with filters:', { statusFilter, typeFilter });
+      logger.debug('Fetching pages with filters', { statusFilter, typeFilter });
       const endpoint = params.toString() ? `/pages?${params.toString()}` : '/pages';
-      console.log('📡 API endpoint:', endpoint);
-      console.log('📡 Full URL:', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${endpoint}`);
-      
-      const data = await fetchAPI(endpoint, { redirectOn401: false, cache: 'no-store' });
-      
-      console.log('📦 Raw API response:', data);
-      console.log('📦 Response type:', typeof data, 'Is Array:', Array.isArray(data));
-      
-      let pagesList: Page[] = [];
-      if (Array.isArray(data)) {
-        pagesList = data;
-      } else if (data?.items && Array.isArray(data.items)) {
-        pagesList = data.items;
-      } else if (data?.pages && Array.isArray(data.pages)) {
-        pagesList = data.pages;
-      } else if (data && typeof data === 'object') {
-        // If data is an object but not in expected format, log it
-        console.warn('⚠️ Unexpected data format:', data);
-        pagesList = [];
-      }
-      
-      console.log(`📄 Parsed ${pagesList.length} pages from response`);
-      
-      // Ensure all pages have required fields with defaults
-      const validPages = pagesList.map((page: any) => ({
-        ...page,
-        viewCount: page.viewCount || 0,
-        author: page.author || { username: 'Unknown' },
-        isSystem: page.isSystem || false,
-        createdAt: page.createdAt || new Date().toISOString(),
-        updatedAt: page.updatedAt || new Date().toISOString(),
-      }));
-      
-      // Hide reserved/admin slugs from the pages section.
-      const visiblePages = validPages.filter((page) => !RESERVED_SLUGS.has(page.slug));
 
-      // Sort by updatedAt (most recent first) so newly created pages appear at the top
+      const data = await fetchAPI(endpoint, { redirectOn401: false, cache: 'no-store' });
+
+      let rawList: unknown[] = [];
+      if (Array.isArray(data)) {
+        rawList = data;
+      } else if (data && typeof data === 'object') {
+        const obj = data as Record<string, unknown>;
+        if (Array.isArray(obj.items)) {
+          rawList = obj.items;
+        } else if (Array.isArray(obj.pages)) {
+          rawList = obj.pages;
+        } else {
+          logger.warn('Unexpected data format', { data });
+        }
+      }
+
+      const validPages = rawList.map(parsePage).filter((page): page is Page => page !== null);
+
+      const visiblePages = validPages.filter((page) => !RESERVED_SLUGS.has(page.slug));
       visiblePages.sort((a, b) => {
         const dateA = new Date(a.updatedAt).getTime();
         const dateB = new Date(b.updatedAt).getTime();
         return dateB - dateA;
       });
-      
-      console.log(`✅ Loaded ${visiblePages.length} pages (${validPages.length} total, ${validPages.length - visiblePages.length} reserved)`);
+
+      logger.debug('Loaded pages', { visible: visiblePages.length, total: validPages.length, reserved: validPages.length - visiblePages.length });
       setPages(visiblePages);
-    } catch (error: any) {
-      console.error('❌ Error fetching pages:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        response: error.response,
-      });
-      
-      // If auth error, redirect to login
-      if (error.message?.includes('401') || error.message?.includes('403') || error.message?.includes('Unauthorized')) {
-        console.warn('⚠️ Authentication error, redirecting to login');
+    } catch (error: unknown) {
+      logger.error('Error fetching pages', error, { component: 'PagesManagementPage' });
+      const errorMessage = getErrorMessage(error, 'Failed to load pages. Please try refreshing.');
+
+      if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('Unauthorized')) {
+        logger.warn('Authentication error, redirecting to login', { component: 'PagesManagementPage' });
         router.push('/login');
         return;
       }
-      
-      // Show error to user and clear the list
-      showError(error.message || 'Failed to load pages. Please try refreshing.');
+
+      showError(errorMessage);
       setPages([]);
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, typeFilter]);
+  }, [statusFilter, typeFilter, router, showError]);
 
   useEffect(() => {
     fetchPages();
   }, [fetchPages]);
 
   useEffect(() => {
-    const onPagesChanged = (event?: any) => {
-      console.log('📢 Pages changed event received, refreshing list...', event?.detail);
-      // Force refresh - fetchPages will use current filters
+    const onPagesChanged = (event?: Event) => {
+      const detail = event && 'detail' in event ? (event as CustomEvent).detail : undefined;
+      logger.debug('Pages changed event received, refreshing list', { detail });
       fetchPages();
     };
     window.addEventListener('pages:changed', onPagesChanged as EventListener);
     return () => window.removeEventListener('pages:changed', onPagesChanged as EventListener);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty deps - fetchPages is stable and uses current state
+  }, [fetchPages]); // Empty deps - fetchPages is stable and uses current state
 
   const handleDelete = async (id: string) => {
     confirm(
@@ -154,9 +163,9 @@ export default function PagesManagementPage() {
           await fetchAPI(`/pages/${id}`, { method: 'DELETE', redirectOn401: false, cache: 'no-store' });
           fetchPages();
           success('Page deleted');
-        } catch (error: any) {
-          console.error('Error deleting page:', error);
-          showError(error.message || 'Failed to delete page');
+        } catch (error: unknown) {
+          logger.error('Error deleting page', error, { component: 'PagesManagementPage' });
+          showError(getErrorMessage(error, 'Failed to delete page'));
         }
       }
     );
@@ -167,9 +176,9 @@ export default function PagesManagementPage() {
       await fetchAPI(`/pages/${id}/duplicate`, { method: 'POST', redirectOn401: false, cache: 'no-store' });
       fetchPages();
       success('Page duplicated successfully!');
-    } catch (error: any) {
-      console.error('Error duplicating page:', error);
-      showError(error.message || 'Failed to duplicate page');
+    } catch (error: unknown) {
+      logger.error('Error duplicating page', error, { component: 'PagesManagementPage' });
+      showError(getErrorMessage(error, 'Failed to duplicate page'));
     }
   };
 
@@ -232,7 +241,7 @@ export default function PagesManagementPage() {
           <Button 
             variant="outline" 
             onClick={() => {
-              console.log('🔄 Manual refresh triggered');
+              logger.debug('Manual refresh triggered');
               fetchPages();
             }}
             title="Refresh Pages List"
@@ -494,3 +503,9 @@ export default function PagesManagementPage() {
     </div>
   );
 }
+
+
+
+
+
+

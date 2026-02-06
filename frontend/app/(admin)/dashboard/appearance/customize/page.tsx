@@ -12,7 +12,30 @@ import { Save, ArrowLeft, Palette, Type } from 'lucide-react';
 export default function CustomizePage() {
   const router = useRouter();
   const { success, error: showError } = useToast();
-  const [appearance, setAppearance] = useState({
+  type AppearanceSettings = {
+    colors: {
+      primary: string;
+      secondary: string;
+      accent: string;
+      background: string;
+      text: string;
+    };
+    fonts: {
+      heading: string;
+      body: string;
+    };
+    typography: {
+      headingSize: string;
+      bodySize: string;
+      lineHeight: string;
+    };
+  };
+
+  type SettingsResponse = {
+    appearanceSettings?: Partial<AppearanceSettings>;
+  };
+
+  const [appearance, setAppearance] = useState<AppearanceSettings>({
     colors: {
       primary: '#3B82F6',
       secondary: '#8B5CF6',
@@ -34,20 +57,20 @@ export default function CustomizePage() {
 
   const loadAppearance = useCallback(async () => {
     try {
-      const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
+      const data = await fetchAPI<SettingsResponse>('/settings', { redirectOn401: false, cache: 'no-store' });
       if (data?.appearanceSettings) {
-        setAppearance({
-          colors: { ...appearance.colors, ...data.appearanceSettings.colors },
-          fonts: { ...appearance.fonts, ...data.appearanceSettings.fonts },
-          typography: { ...appearance.typography, ...data.appearanceSettings.typography }
-        });
+        setAppearance((prev) => ({
+          colors: { ...prev.colors, ...data.appearanceSettings?.colors },
+          fonts: { ...prev.fonts, ...data.appearanceSettings?.fonts },
+          typography: { ...prev.typography, ...data.appearanceSettings?.typography },
+        }));
       }
-    } catch (e: any) {
-      showError(e.message || 'Failed to load appearance settings');
+    } catch (e: unknown) {
+      showError(e instanceof Error && e.message ? e.message : 'Failed to load appearance settings');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     loadAppearance();
@@ -62,8 +85,8 @@ export default function CustomizePage() {
         cache: 'no-store',
       });
       success('Appearance settings saved successfully!');
-    } catch (e: any) {
-      showError(e.message || 'Failed to save appearance settings');
+    } catch (e: unknown) {
+      showError(e instanceof Error && e.message ? e.message : 'Failed to save appearance settings');
     }
   }
 
@@ -233,3 +256,4 @@ export default function CustomizePage() {
     </div>
   );
 }
+

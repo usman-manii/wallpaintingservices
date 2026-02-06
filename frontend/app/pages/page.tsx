@@ -3,15 +3,17 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Calendar, FileText } from 'lucide-react';
 import { API_URL } from '@/lib/api';
+import logger from '@/lib/logger';
 
 interface Page {
   id: string;
-  title: string;
+  title?: string;
   slug: string;
   description?: string;
   publishedAt?: string;
-  updatedAt: string;
-  viewCount: number;
+  updatedAt?: string;
+  viewCount?: number;
+  status?: string;
 }
 
 async function getPublishedPages(): Promise<Page[]> {
@@ -21,25 +23,41 @@ async function getPublishedPages(): Promise<Page[]> {
     });
     
     if (!res.ok) {
-      console.error('Failed to fetch pages:', res.status);
+      logger.error('Failed to fetch pages', { status: res.status }, { component: 'PagesPage' });
       return [];
     }
-    
+
     const data = await res.json();
-    const pages = Array.isArray(data) ? data : [];
-    
-    // Filter to only published pages and sort by published date
+    const list = Array.isArray(data) ? data : [];
+    const pages = list.map(toPage).filter((page): page is Page => page !== null);
+
     return pages
-      .filter((page: any) => page.status === 'PUBLISHED')
-      .sort((a: any, b: any) => {
-        const dateA = new Date(a.publishedAt || a.updatedAt).getTime();
-        const dateB = new Date(b.publishedAt || b.updatedAt).getTime();
+      .filter((page) => page.status === 'PUBLISHED')
+      .sort((a, b) => {
+        const dateA = new Date(a.publishedAt || a.updatedAt || 0).getTime();
+        const dateB = new Date(b.publishedAt || b.updatedAt || 0).getTime();
         return dateB - dateA;
       });
-  } catch (error) {
-    console.error('Error fetching pages:', error);
+  } catch (error: unknown) {
+    logger.error('Error fetching pages', error, { component: 'PagesPage' });
     return [];
   }
+}
+
+function toPage(value: unknown): Page | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== 'string' || typeof obj.slug !== 'string') return null;
+  return {
+    id: obj.id,
+    slug: obj.slug,
+    title: typeof obj.title === 'string' ? obj.title : undefined,
+    description: typeof obj.description === 'string' ? obj.description : undefined,
+    publishedAt: typeof obj.publishedAt === 'string' ? obj.publishedAt : undefined,
+    updatedAt: typeof obj.updatedAt === 'string' ? obj.updatedAt : undefined,
+    viewCount: typeof obj.viewCount === 'number' ? obj.viewCount : undefined,
+    status: typeof obj.status === 'string' ? obj.status : undefined,
+  };
 }
 
 export default async function PagesPage() {
@@ -71,7 +89,7 @@ export default async function PagesPage() {
                       className="block group"
                     >
                       <h2 className="text-xl font-bold text-foreground mb-2 group-hover:text-primary transition-colors">
-                        {page.title}
+                        {page.title || 'Untitled'}
                       </h2>
                     </Link>
                     {page.description && (
@@ -85,10 +103,9 @@ export default async function PagesPage() {
                 <div className="flex items-center justify-between pt-4 border-t border-border">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Calendar className="w-4 h-4" />
-                    {page.publishedAt 
-                      ? new Date(page.publishedAt).toLocaleDateString()
-                      : new Date(page.updatedAt).toLocaleDateString()
-                    }
+                    {page.publishedAt || page.updatedAt
+                      ? new Date(page.publishedAt || page.updatedAt || 0).toLocaleDateString()
+                      : ''}
                   </div>
                   <Link href={`/${page.slug === '(home)' ? '' : page.slug}`}>
                     <Button variant="outline" size="sm">

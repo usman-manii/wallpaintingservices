@@ -24,6 +24,8 @@ import { AuditLoggerMiddleware } from './common/middleware/audit-logger.middlewa
 import { CsrfProtection } from './common/middleware/csrf-protection.middleware';
 import { CategoryModule } from './category/category.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 /**
  * Main application module
@@ -61,6 +63,8 @@ import { FeedbackModule } from './feedback/feedback.module';
     CaptchaModule,
     CategoryModule,
     FeedbackModule,
+    NotificationsModule,
+    DashboardModule,
   ],
   controllers: [],
   providers: [

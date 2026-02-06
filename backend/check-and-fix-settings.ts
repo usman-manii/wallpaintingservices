@@ -1,17 +1,18 @@
 // Check and fix homePageLayout setting
 import { PrismaClient } from '@prisma/client';
+import { log, logError } from './src/common/utils/cli-logger';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Checking homePageLayout setting...\n');
+  log('Checking homePageLayout setting...');
   
   // Get current settings
   const settings = await prisma.siteSettings.findFirst();
   
   if (!settings) {
-    console.log('❌ No settings found in database');
-    console.log('Creating default settings...');
+    log('No settings found in database');
+    log('Creating default settings...');
     const newSettings = await prisma.siteSettings.create({
       data: {
         siteName: 'Wall Painting Services',
@@ -19,31 +20,33 @@ async function main() {
         homePageLayout: 'single'
       }
     });
-    console.log('✅ Created settings with homePageLayout:', newSettings.homePageLayout);
+    log('Created settings with homePageLayout:', newSettings.homePageLayout);
   } else {
-    console.log('Current homePageLayout:', settings.homePageLayout);
-    console.log('Site Name:', settings.siteName);
+    log('Current homePageLayout:', settings.homePageLayout);
+    log('Site Name:', settings.siteName);
     
     if (settings.homePageLayout !== 'single') {
-      console.log('\n⚠️  homePageLayout is not "single", updating...');
+      log('homePageLayout is not "single", updating...');
       const updated = await prisma.siteSettings.update({
         where: { id: settings.id },
         data: { homePageLayout: 'single' }
       });
-      console.log('✅ Updated homePageLayout to:', updated.homePageLayout);
+      log('Updated homePageLayout to:', updated.homePageLayout);
     } else {
-      console.log('✅ homePageLayout is already set to "single"');
+      log('homePageLayout is already set to "single"');
     }
   }
   
   // Show final state
   const final = await prisma.siteSettings.findFirst();
-  console.log('\nFinal settings:');
-  console.log('- ID:', final?.id);
-  console.log('- Site Name:', final?.siteName);
-  console.log('- Home Page Layout:', final?.homePageLayout);
+  log('Final settings:');
+  log('- ID:', final?.id);
+  log('- Site Name:', final?.siteName);
+  log('- Home Page Layout:', final?.homePageLayout);
 }
 
 main()
-  .catch(console.error)
+  .catch((error) => {
+    logError('Settings check failed:', error);
+  })
   .finally(() => prisma.$disconnect());

@@ -4,10 +4,11 @@ import { usePathname } from 'next/navigation';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { TopBar } from '@/components/TopBar';
+import CookieConsentBanner from '@/components/CookieConsentBanner';
 
 export default function ClientLayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  // Check if we are in the admin dashboard (or any route that shouldn't have the public shell)
+  // Check if we are in the admin dashboard (or a route that shouldn't have the public shell)
   // Also separately check /settings since it's an admin route (will redirect to /dashboard/settings)
   const isDashboardRoute = pathname?.startsWith('/dashboard');
   const isSettingsRoute = pathname?.startsWith('/settings');
@@ -28,6 +29,7 @@ export default function ClientLayoutWrapper({ children }: { children: React.Reac
         {children}
       </main>
       <Footer />
+      <CookieConsentBanner />
     </>
   );
 }

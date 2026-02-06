@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { CheckCircle, AlertCircle } from 'lucide-react';
+import logger from '@/lib/logger';
+import { getErrorMessage } from '@/lib/error-utils';
 
 export default function GetQuotePage() {
   const [formData, setFormData] = useState({
@@ -44,10 +46,10 @@ export default function GetQuotePage() {
       });
       setStatus('success');
       setFormData({ name: '', email: '', phone: '', serviceType: 'Residential Painting', message: '' });
-    } catch (error: any) {
-      console.error(error);
+    } catch (error: unknown) {
+      logger.error('Failed to submit quote request', error, { component: 'GetQuotePage' });
       setStatus('error');
-      setErrorMessage(error.message || 'Failed to send request. Please try again.');
+      setErrorMessage(getErrorMessage(error, 'Failed to send request. Please try again.'));
     }
   };
 

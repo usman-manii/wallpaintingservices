@@ -14,6 +14,7 @@ export class EnvironmentValidator {
     'DATABASE_URL',
     'JWT_SECRET',
     'APP_SECRET',
+    'COOKIE_SECRET',
     'PORT',
     'NODE_ENV',
   ];
@@ -26,6 +27,12 @@ export class EnvironmentValidator {
     'FRONTEND_URL',
     'RECAPTCHA_V2_SECRET_KEY',
     'RECAPTCHA_V3_SECRET_KEY',
+    'JWT_REFRESH_SECRET',
+    'MAIL_HOST',
+    'MAIL_PORT',
+    'MAIL_USER',
+    'MAIL_PASS',
+    'MAIL_FROM',
   ];
 
   /**
@@ -46,7 +53,7 @@ export class EnvironmentValidator {
     // Check required variables
     if (missingRequired.length > 0) {
       const errorMsg = `Missing required environment variables: ${missingRequired.join(', ')}`;
-      
+
       if (process.env.NODE_ENV === 'production') {
         this.logger.error(errorMsg);
         throw new Error(errorMsg);
@@ -69,7 +76,7 @@ export class EnvironmentValidator {
       this.logger.error(
         'JWT_SECRET is too short. Use at least 32 characters for security.',
       );
-      
+
       if (process.env.NODE_ENV === 'production') {
         throw new Error('JWT_SECRET must be at least 32 characters in production');
       }
@@ -80,28 +87,58 @@ export class EnvironmentValidator {
       this.logger.error(
         'APP_SECRET is too short. Use at least 32 characters for security.',
       );
-      
+
       if (process.env.NODE_ENV === 'production') {
         throw new Error('APP_SECRET must be at least 32 characters in production');
       }
     }
 
-    this.logger.log('✅ Environment validation passed');
+    // Validate COOKIE_SECRET strength
+    if (process.env.COOKIE_SECRET && process.env.COOKIE_SECRET.length < 32) {
+      this.logger.error(
+        'COOKIE_SECRET is too short. Use at least 32 characters for security.',
+      );
+
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('COOKIE_SECRET must be at least 32 characters in production');
+      }
+    }
+
+    this.logger.log('Environment validation passed');
   }
 
   /**
    * Get environment info for health check
    */
-  static getInfo(): Record<string, any> {
+  static getInfo(): EnvironmentInfo {
     return {
       nodeEnv: process.env.NODE_ENV || 'development',
       nodeVersion: process.version,
       hasJwtSecret: !!process.env.JWT_SECRET,
       hasAppSecret: !!process.env.APP_SECRET,
+      hasCookieSecret: !!process.env.COOKIE_SECRET,
       hasAiKey: !!process.env.AI_API_KEY,
       hasRecaptcha: !!(
         process.env.RECAPTCHA_V2_SECRET_KEY || process.env.RECAPTCHA_V3_SECRET_KEY
       ),
+      hasMailConfig: !!(
+        process.env.MAIL_HOST &&
+        process.env.MAIL_PORT &&
+        process.env.MAIL_USER &&
+        process.env.MAIL_PASS &&
+        process.env.MAIL_FROM
+      ),
     };
   }
+}
+
+export interface EnvironmentInfo {
+  nodeEnv: string;
+  nodeVersion: string;
+  hasJwtSecret: boolean;
+  hasAppSecret: boolean;
+  hasCookieSecret: boolean;
+  hasAiKey: boolean;
+  hasRecaptcha: boolean;
+  hasMailConfig: boolean;
 }

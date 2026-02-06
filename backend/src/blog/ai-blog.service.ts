@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
-import { PostStatus } from '@prisma/client';
+import { PostStatus, SiteSettings } from '@prisma/client';
 
 export interface GenerationResult {
   success: boolean;
@@ -26,7 +26,7 @@ export class AiBlogService {
    * Generates multiple blog posts based on site configuration
    */
   async generateBlogBatch(keywords?: string[], count?: number): Promise<GenerationResult[]> {
-    this.logger.log('🤖 Starting AI blog batch generation...');
+    this.logger.log('[AI-BLOG] Starting AI blog batch generation...');
 
     const settings = await this.prisma.siteSettings.findFirst();
     if (!settings?.aiEnabled) {
@@ -37,7 +37,7 @@ export class AiBlogService {
     const batchSize = count || settings.aiBatchSize || 10;
     const targetKeywords = keywords || settings.siteKeywords || [];
     
-    this.logger.log(`📝 Generating ${batchSize} posts with keywords: ${targetKeywords.join(', ')}`);
+    this.logger.log(`[AI-BLOG] Generating ${batchSize} posts with keywords: ${targetKeywords.join(', ')}`);
 
     const results: GenerationResult[] = [];
 
@@ -49,13 +49,13 @@ export class AiBlogService {
         // Small delay between generations to avoid rate limits
         await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (error) {
-        this.logger.error(`Failed to generate post ${i + 1}: ${error.message}`);
+        this.logger.error(`[AI-BLOG] Failed to generate post ${i + 1}: ${error.message}`);
         results.push({ success: false, error: error.message });
       }
     }
 
     const successCount = results.filter(r => r.success).length;
-    this.logger.log(`✅ Batch complete: ${successCount}/${batchSize} posts generated successfully`);
+    this.logger.log(`[AI-BLOG] Batch complete: ${successCount}/${batchSize} posts generated successfully`);
 
     return results;
   }
@@ -63,7 +63,7 @@ export class AiBlogService {
   /**
    * Generate a single blog post with AI
    */
-  private async generateSinglePost(keywords: string[], settings: any): Promise<GenerationResult> {
+  private async generateSinglePost(keywords: string[], settings: SiteSettings): Promise<GenerationResult> {
     // Get AI system user or create one
     const aiUser = await this.getOrCreateAiUser();
 
@@ -131,6 +131,9 @@ export class AiBlogService {
             model: settings.aiModel,
             prompt: prompt,
             keywords: keywords,
+            mode: settings.aiMode || 'standard',
+            learningLevel: settings.aiLearningLevel || 3,
+            selfLearningEnabled: settings.aiSelfLearningEnabled ?? false,
             version: '1.0',
           },
         },
@@ -139,7 +142,7 @@ export class AiBlogService {
       // Create tags and link them
       await this.createAndLinkTags(updatedPost.id, autoTags);
 
-      this.logger.log(`✅ Generated: "${updatedPost.title}" (${wordCount} words, ${autoTags.length} tags)`);
+      this.logger.log(`[AI-BLOG] Generated: "${updatedPost.title}" (${wordCount} words, ${autoTags.length} tags)`);
 
       return {
         success: true,
@@ -158,7 +161,7 @@ export class AiBlogService {
         },
       });
 
-      this.logger.error(`❌ Generation failed: ${error.message}`);
+      this.logger.error(`[AI-BLOG] Generation failed: ${error.message}`);
       return { success: false, error: error.message };
     }
   }
@@ -166,14 +169,16 @@ export class AiBlogService {
   /**
    * Build comprehensive prompt for AI
    */
-  private buildPrompt(keywords: string[], settings: any): string {
+  private buildPrompt(keywords: string[], settings: SiteSettings): string {
     const keywordsList = keywords.slice(0, 5).join(', ');
+    const modeBlock = this.buildModeBlock(settings);
     
     return `You are an expert content writer for a ${settings.contentFocus || 'wall painting services'} website.
 
 TARGET AUDIENCE: ${settings.targetAudience || 'Homeowners and businesses seeking professional painting services'}
 TONE: ${settings.contentTone || 'professional, informative, and engaging'}
 KEYWORDS: ${keywordsList}
+${modeBlock}
 
 Write a comprehensive, SEO-optimized blog post (minimum ${settings.aiMinWordCount || 3000} words) that:
 
@@ -209,6 +214,49 @@ Write a comprehensive, SEO-optimized blog post (minimum ${settings.aiMinWordCoun
 }
 
 Focus on providing genuine value to readers while naturally incorporating these keywords: ${keywordsList}`;
+  }
+
+  private getModeSettings(settings: SiteSettings) {
+    const rawMode = (settings.aiMode || 'standard').toLowerCase();
+    const mode = rawMode === 'go' || rawMode === 'god' || rawMode === 'enterprise'
+      ? rawMode
+      : 'standard';
+    const level = Math.min(7, Math.max(1, settings.aiLearningLevel || 3));
+    const selfLearning = settings.aiSelfLearningEnabled ?? false;
+    return { mode, level, selfLearning };
+  }
+
+  private buildModeBlock(settings: SiteSettings): string {
+    const { mode, level, selfLearning } = this.getModeSettings(settings);
+    const depthDescriptor =
+      level <= 2
+        ? 'Baseline depth with clear structure and simple examples.'
+        : level <= 4
+        ? 'Intermediate depth with tactical advice, checklists, and step-by-step guidance.'
+        : level <= 6
+        ? 'Advanced depth with multi-angle analysis, tradeoffs, and implementation details.'
+        : 'Expert depth with frameworks, measurable outcomes, and executive-ready insights.';
+
+    const modeInstruction =
+      mode === 'go'
+        ? 'GO MODE: prioritize velocity, provide rapid experimentation ideas, and include multiple options per section.'
+        : mode === 'god'
+        ? 'GOD MODE: maximize depth, include advanced frameworks, risk mitigation, and pro-level playbooks.'
+        : mode === 'enterprise'
+        ? 'ENTERPRISE MODE: emphasize governance, compliance, operational readiness, and KPI-driven outcomes.'
+        : 'STANDARD MODE: balanced SEO coverage with practical guidance and clarity.';
+
+    const selfLearningInstruction = selfLearning
+      ? 'SELF-LEARNING: reinforce the best-performing structure and add a brief quality checklist before final output.'
+      : 'SELF-LEARNING: disabled (no self-revision steps required).';
+
+    return `
+AI MODE: ${mode.toUpperCase()}
+LEARNING LEVEL: ${level}/7
+DEPTH PROFILE: ${depthDescriptor}
+${modeInstruction}
+${selfLearningInstruction}
+`;
   }
 
   /**
@@ -332,7 +380,7 @@ Focus on providing genuine value to readers while naturally incorporating these 
    * Analyzes all posts and creates intelligent internal links
    */
   async performAutoInterlinking(): Promise<number> {
-    this.logger.log('🔗 Starting auto-interlinking process...');
+    this.logger.log('[AI-BLOG] Starting auto-interlinking process...');
 
     const settings = await this.prisma.siteSettings.findFirst();
     if (!settings?.autoInterlinkEnabled) {
@@ -398,7 +446,7 @@ Focus on providing genuine value to readers while naturally incorporating these 
       }
     }
 
-    this.logger.log(`✅ Auto-interlinking complete: ${totalLinksCreated} links created`);
+    this.logger.log(`[AI-BLOG] Auto-interlinking complete: ${totalLinksCreated} links created`);
     return totalLinksCreated;
   }
 
@@ -407,7 +455,7 @@ Focus on providing genuine value to readers while naturally incorporating these 
    * Identifies old posts and queues them for AI refresh
    */
   async identifyPostsNeedingRefresh(): Promise<number> {
-    this.logger.log('🔄 Checking for posts needing refresh...');
+    this.logger.log('[AI-BLOG] Checking for posts needing refresh...');
 
     const settings = await this.prisma.siteSettings.findFirst();
     if (!settings?.contentRefreshEnabled) {
@@ -451,7 +499,7 @@ Focus on providing genuine value to readers while naturally incorporating these 
       });
     }
 
-    this.logger.log(`📋 Marked ${oldPosts.length} posts for content refresh`);
+    this.logger.log(`[AI-BLOG] Marked ${oldPosts.length} posts for content refresh`);
     return oldPosts.length;
   }
 
@@ -459,7 +507,7 @@ Focus on providing genuine value to readers while naturally incorporating these 
    * Refresh old content with new AI-generated updates
    */
   async refreshOldContent(postId: string): Promise<GenerationResult> {
-    this.logger.log(`🔄 Refreshing content for post: ${postId}`);
+    this.logger.log(`[AI-BLOG] Refreshing content for post: ${postId}`);
 
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
@@ -518,11 +566,11 @@ Return updated content in the same JSON format.`;
         },
       });
 
-      this.logger.log(`✅ Content refreshed: "${post.title}" (${wordCount} words)`);
+      this.logger.log(`[AI-BLOG] Content refreshed: "${post.title}" (${wordCount} words)`);
 
       return { success: true, postId: postId, title: post.title, wordCount: wordCount };
     } catch (error) {
-      this.logger.error(`❌ Refresh failed: ${error.message}`);
+      this.logger.error(`[AI-BLOG] Refresh failed: ${error.message}`);
       return { success: false, error: error.message };
     }
   }
@@ -532,7 +580,7 @@ Return updated content in the same JSON format.`;
    * Intelligently extract tags from manually created posts
    */
   async autoTagHumanPost(postId: string): Promise<string[]> {
-    this.logger.log(`🏷️ Auto-tagging post: ${postId}`);
+    this.logger.log(`[AI-BLOG] Auto-tagging post: ${postId}`);
 
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
@@ -558,7 +606,7 @@ Return updated content in the same JSON format.`;
     // Create and link tags
     await this.createAndLinkTags(postId, autoTags);
 
-    this.logger.log(`✅ Auto-tagged with ${autoTags.length} tags: ${autoTags.join(', ')}`);
+    this.logger.log(`[AI-BLOG] Auto-tagged with ${autoTags.length} tags: ${autoTags.join(', ')}`);
 
     return autoTags;
   }
@@ -762,3 +810,7 @@ Return updated content in the same JSON format.`;
     return cleanContent.substring(start, end).trim();
   }
 }
+
+
+
+

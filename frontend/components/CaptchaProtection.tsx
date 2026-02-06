@@ -3,12 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import { RefreshCw, ShieldCheck, AlertCircle } from 'lucide-react';
-
-declare global {
-  interface Window {
-    grecaptcha: any;
-  }
-}
+import logger from '@/lib/logger';
 
 /* 
  * Enterprise Grade Captcha System - Production Ready
@@ -53,7 +48,7 @@ export default function CaptchaProtection({
       script.async = true;
       script.defer = true;
       script.onerror = () => {
-        console.warn('Failed to load Google reCAPTCHA, using custom fallback');
+        logger.warn('Failed to load Google reCAPTCHA, using custom fallback', { component: 'CaptchaProtection' });
         setCaptchaType('custom');
         setStatus('fallback');
       };
@@ -93,8 +88,8 @@ export default function CaptchaProtection({
       // Backend will validate the score
       setStatus('verified');
       onVerify(token, 'v3');
-    } catch (error: any) {
-      console.error('reCAPTCHA v3 error:', error);
+    } catch (error: unknown) {
+      logger.error('reCAPTCHA v3 error', error, { component: 'CaptchaProtection' });
       // Fallback to v2
       if (siteKeyV2) {
         setCaptchaType('v2');
@@ -110,15 +105,22 @@ export default function CaptchaProtection({
     if (!siteKeyV2 || !v2ContainerRef.current) return;
 
     const interval = setInterval(() => {
-      if (window.grecaptcha && window.grecaptcha.render) {
+      const grecaptcha = window.grecaptcha;
+      if (grecaptcha && grecaptcha.render) {
         clearInterval(interval);
+        const render = grecaptcha.render;
+        const reset = grecaptcha.reset;
 
         if (v2WidgetId.current !== null) {
           // Reset existing widget
-          window.grecaptcha.reset(v2WidgetId.current);
+          if (reset) {
+            reset(v2WidgetId.current);
+          }
         } else {
           // Render new widget
-          v2WidgetId.current = window.grecaptcha.render(v2ContainerRef.current, {
+          const container = v2ContainerRef.current;
+          if (!container) return;
+          const widgetId = render(container, {
             sitekey: siteKeyV2,
             callback: (token: string) => {
               setStatus('verified');
@@ -129,6 +131,7 @@ export default function CaptchaProtection({
               fallbackToCustom();
             },
           });
+          v2WidgetId.current = typeof widgetId === 'number' ? widgetId : null;
         }
       }
     }, 100);
@@ -150,9 +153,13 @@ export default function CaptchaProtection({
       if (!response.ok) throw new Error('Failed to load captcha');
       
       const data = await response.json();
-      setCustomChallenge(data);
-    } catch (error) {
-      console.error('Custom captcha error:', error);
+      const challenge = parseChallenge(data);
+      if (!challenge) {
+        throw new Error('Invalid captcha challenge payload');
+      }
+      setCustomChallenge(challenge);
+    } catch (error: unknown) {
+      logger.error('Custom captcha error', error, { component: 'CaptchaProtection' });
       setErrorMessage('Failed to load security challenge. Please refresh the page.');
     }
   };
@@ -179,8 +186,9 @@ export default function CaptchaProtection({
       });
 
       const result = await response.json();
+      const isSuccess = typeof result === 'object' && result !== null && 'success' in result && result.success === true;
 
-      if (result.success) {
+      if (isSuccess) {
         setStatus('verified');
         onVerify(customChallenge.captchaId, 'custom');
       } else {
@@ -189,11 +197,19 @@ export default function CaptchaProtection({
         setStatus('fallback');
         await loadCustomChallenge();
       }
-    } catch (error) {
+    } catch (error: unknown) {
       setErrorMessage('Verification failed. Please try again.');
+      logger.error('Captcha verification failed', error, { component: 'CaptchaProtection' });
       setStatus('fallback');
       await loadCustomChallenge();
     }
+  };
+
+  const parseChallenge = (value: unknown): { image: string; captchaId: string } | null => {
+    if (!value || typeof value !== 'object') return null;
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.image !== 'string' || typeof obj.captchaId !== 'string') return null;
+    return { image: obj.image, captchaId: obj.captchaId };
   };
 
   const waitForGrecaptcha = (): Promise<void> => {

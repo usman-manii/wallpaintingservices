@@ -7,15 +7,19 @@ import * as crypto from 'crypto';
 @Injectable()
 export class CaptchaService {
   private readonly logger = new Logger(CaptchaService.name);
-  // Simple in-memory secret for encryption (in stateless mode). 
-  // In production, use a persistent ENV VAR.
-  private readonly ENCRYPTION_KEY = process.env.APP_SECRET || 'fallback_secret_key_32_bytes_long!!'; 
-  private readonly IV_LENGTH = 16;
+  private readonly encryptionKey: Buffer;
+  private readonly IV_LENGTH = 12;
 
   constructor(
     private settingsService: SettingsService,
     private httpService: HttpService
-  ) {}
+  ) {
+    const appSecret = process.env.APP_SECRET;
+    if (!appSecret) {
+      throw new Error('APP_SECRET is required for CAPTCHA encryption');
+    }
+    this.encryptionKey = crypto.createHash('sha256').update(appSecret).digest();
+  }
 
   async verify(token: string, ip?: string, captchaId?: string, type?: string): Promise<boolean> {
      const settings = await this.settingsService.getSettings();
@@ -43,7 +47,7 @@ export class CaptchaService {
          return this.verifyGoogleRecaptcha(token, secret, 0.5, ip);
      } else {
          // v2
-         // Support legacy 'recaptchaSecretKey' or specific 'recaptchaV2SecretKey'
+         // Support recaptchaSecretKey or recaptchaV2SecretKey
          const secret = settings.recaptchaV2SecretKey || settings.recaptchaSecretKey;
          if (!secret) {
             this.logger.warn('Recaptcha V2 secret not configured.');
@@ -128,34 +132,33 @@ export class CaptchaService {
   }
 
   private encrypt(text: string): string {
-     // A simple encryption (in real world use proper AES-256-GCM)
-      // For this demo, using simple XOR or similar if dependencies issue, but node crypto is fine.
-     try {
-         // Using a static key for now, ensure it matches 32 bytes for aes-256-cbc
-         const key = crypto.scryptSync(this.ENCRYPTION_KEY, 'salt', 32);
-         const iv = crypto.randomBytes(16);
-         const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-         let encrypted = cipher.update(text);
-         encrypted = Buffer.concat([encrypted, cipher.final()]);
-         return iv.toString('hex') + ':' + encrypted.toString('hex');
-     } catch (e) {
-         this.logger.error(`Error generating CAPTCHA: ${e.message}`, e.stack);
-         return '';
-     }
+    try {
+      const iv = crypto.randomBytes(this.IV_LENGTH);
+      const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
+      const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+      const tag = cipher.getAuthTag();
+      return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
+    } catch (e) {
+      this.logger.error('Error generating CAPTCHA', e);
+      throw e;
+    }
   }
 
   private decrypt(text: string): string {
-      try {
-        const textParts = text.split(':');
-        const iv = Buffer.from(textParts.shift()!, 'hex');
-        const encryptedText = Buffer.from(textParts.join(':'), 'hex');
-        const key = crypto.scryptSync(this.ENCRYPTION_KEY, 'salt', 32);
-        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-        let decrypted = decipher.update(encryptedText);
-        decrypted = Buffer.concat([decrypted, decipher.final()]);
-        return decrypted.toString();
-      } catch (e) {
-          throw new Error('Decryption Failed');
+    try {
+      const [ivHex, tagHex, encryptedHex] = text.split(':');
+      if (!ivHex || !tagHex || !encryptedHex) {
+        throw new Error('Invalid encrypted payload');
       }
+      const iv = Buffer.from(ivHex, 'hex');
+      const tag = Buffer.from(tagHex, 'hex');
+      const encryptedText = Buffer.from(encryptedHex, 'hex');
+      const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, iv);
+      decipher.setAuthTag(tag);
+      const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
+      return decrypted.toString('utf8');
+    } catch (e) {
+      throw new Error('Decryption Failed');
+    }
   }
 }

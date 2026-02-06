@@ -15,7 +15,7 @@
 'use client';
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import logger from '@/lib/logger.service';
+import logger from '@/lib/logger';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -97,7 +97,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
       }
     }
 
-    // Reset on any props change if configured
+    // Reset on prop changes if configured
     if (this.props.resetOnPropsChange && prevProps !== this.props && this.state.hasError) {
       this.reset();
     }

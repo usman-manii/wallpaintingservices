@@ -4,14 +4,13 @@
 
 import './globals.css';
 import type { Metadata } from 'next';
-import CookieConsent from '@/components/CookieConsent';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientLayoutWrapper from '@/components/ClientLayoutWrapper';
 import { GoogleAnalytics, GoogleTagManager } from '@/components/Analytics';
 import VerificationMeta from '@/components/VerificationMeta';
 import { UserSessionProvider } from '@/contexts/UserSessionContext';
-import { SettingsProvider } from '@/contexts/SettingsContext';
+import SettingsProvider from '@/contexts/SettingsContext';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
@@ -94,6 +93,13 @@ export default function RootLayout({
         {/* Theme Color for Mobile Browsers */}
         <meta name="theme-color" content="#3b82f6" />
         <meta name="msapplication-TileColor" content="#3b82f6" />
+
+        {/* Prevent theme flash on initial paint */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var theme=localStorage.getItem('theme');var systemDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var useDark=theme==='dark'||((!theme||theme==='system')&&systemDark);if(useDark){document.documentElement.classList.add('dark');}else{document.documentElement.classList.remove('dark');}}catch(e){}})();`,
+          }}
+        />
         
         {/* Analytics */}
         {gaId && <GoogleAnalytics gaId={gaId} />}
@@ -111,7 +117,6 @@ export default function RootLayout({
                 <ClientLayoutWrapper>
                   {children}
                 </ClientLayoutWrapper>
-                <CookieConsent />
               </ToastProvider>
             </ThemeProvider>
           </SettingsProvider>

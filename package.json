@@ -13,6 +13,7 @@
   },
   "scripts": {
     "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev --workspace=backend\" \"npm run dev --workspace=frontend\"",
+    "dev:fast": "concurrently -n backend,frontend -c blue,green \"npm run dev --workspace=backend\" \"npm run dev:fast --workspace=frontend\"",
     "build": "npm run build --workspaces --if-present",
     "start": "concurrently -n backend,frontend -c blue,green \"npm run start:prod --workspace=backend\" \"npm run start --workspace=frontend\"",
     "test": "npm run test --workspaces --if-present",
@@ -37,6 +38,28 @@
     "prettier": "^3.2.5",
     "prisma": "^7.3.0"
   },
+  "overrides": {
+    "hono": "4.11.7",
+    "tar": "7.5.7",
+    "@nestjs/config": {
+      "lodash": "4.17.23"
+    },
+    "chevrotain": {
+      "lodash": "4.17.23"
+    },
+    "@chevrotain/gast": {
+      "lodash": "4.17.23"
+    },
+    "@chevrotain/cst-dts-gen": {
+      "lodash": "4.17.23"
+    },
+    "glob": "13.0.1",
+    "minimatch": "10.1.2",
+    "@isaacs/brace-expansion": "5.0.1",
+    "@mapbox/node-pre-gyp": {
+      "tar": "7.5.7"
+    }
+  },
   "keywords": [
     "cms",
     "ai",
@@ -52,5 +75,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/yourusername/wallpaintingservices.git"
-  }
+  },
+  "dependencies": {}
 }

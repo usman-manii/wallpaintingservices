@@ -6,6 +6,11 @@ import { v4 as uuidv4 } from 'uuid';
 import sharp from 'sharp';
 import * as net from 'net';
 import { resolve4, resolve6 } from 'dns/promises';
+import { Readable } from 'stream';
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
 
 /**
  * Media Service\n * Handles file uploads, image processing, and media library management\n * Supports image optimization, variants generation, and folder organization\n */
@@ -196,7 +201,7 @@ export class MediaService {
         destination: '',
         filename: '',
         path: '',
-        stream: null as any,
+        stream: Readable.from(buffer),
       };
 
       return this.uploadFile(mockFile, userId, folder);
@@ -293,9 +298,8 @@ export class MediaService {
       }
 
       // Delete variants
-      if (media.variants && typeof media.variants === 'object') {
-        const variants = media.variants as any;
-        Object.values(variants).forEach((variantUrl: any) => {
+      if (isRecord(media.variants)) {
+        Object.values(media.variants).forEach((variantUrl) => {
           if (typeof variantUrl !== 'string') return;
           const relative = variantUrl.replace(/^\/+/, '');
           const variantPath = path.resolve(this.publicDir, relative);

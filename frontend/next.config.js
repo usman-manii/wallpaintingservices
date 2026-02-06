@@ -6,6 +6,28 @@ const nextConfig = {
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
+
+  // Build and dev-time optimizations
+  experimental: {
+    optimizePackageImports: [
+      'lucide-react',
+      'date-fns',
+      'html-react-parser',
+      'sanitize-html',
+      'prosemirror-commands',
+      'prosemirror-example-setup',
+      'prosemirror-history',
+      'prosemirror-keymap',
+      'prosemirror-model',
+      'prosemirror-schema-basic',
+      'prosemirror-schema-list',
+      'prosemirror-state',
+      'prosemirror-view',
+    ],
+    turbopackFileSystemCacheForDev: true,
+    turbopackFileSystemCacheForBuild: true,
+    serverComponentsHmrCache: true,
+  },
   
   // Image optimization
   images: {
@@ -170,8 +192,8 @@ const nextConfig = {
   ],
   
   // Webpack optimization
-  webpack: (config, { isServer, webpack }) => {
-    if (!isServer) {
+  webpack: (config, { isServer, dev, webpack }) => {
+    if (!isServer && !dev) {
       // Enhanced code splitting
       config.optimization.splitChunks = {
         chunks: 'all',
@@ -214,7 +236,7 @@ const nextConfig = {
     }
     
     // Production-specific optimizations
-    if (process.env.NODE_ENV === 'production') {
+    if (!dev && process.env.NODE_ENV === 'production') {
       // Remove source maps in production for security and performance
       config.devtool = false;
       

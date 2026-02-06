@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useRef } from 'react';
 import { Button } from './Button';
 import { Upload, Link, X, Image as ImageIcon } from 'lucide-react';
@@ -11,6 +13,17 @@ interface ImageUploadProps {
   label?: string;
   folder?: string;
 }
+
+type UploadResponse = {
+  url?: string;
+};
+
+const getImageUrl = (response: UploadResponse | null | undefined): string | null => {
+  if (!response?.url || typeof response.url !== 'string') return null;
+  return response.url.startsWith('http')
+    ? response.url
+    : `${typeof window !== 'undefined' ? window.location.origin : ''}${response.url}`;
+};
 
 export function ImageUpload({ onImageSelect, currentImage, label = 'Upload Image', folder = 'uploads' }: ImageUploadProps) {
   const [uploading, setUploading] = useState(false);
@@ -43,17 +56,20 @@ export function ImageUpload({ onImageSelect, currentImage, label = 'Upload Image
       formData.append('file', file);
       formData.append('folder', folder);
 
-      const data = await fetchAPI('/media/upload', {
+      const data = await fetchAPI<UploadResponse>('/media/upload', {
         method: 'POST',
         body: formData,
       });
 
       // Use relative URL or full URL from response
-      const imageUrl = data.url?.startsWith('http') ? data.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${data.url}`;
+      const imageUrl = getImageUrl(data);
+      if (!imageUrl) {
+        throw new Error('Upload response missing URL');
+      }
       onImageSelect(imageUrl);
     } catch (err) {
       setError('Failed to upload image');
-      console.error(err);
+      logger.error('Image upload failed', err);
     } finally {
       setUploading(false);
     }
@@ -69,18 +85,21 @@ export function ImageUpload({ onImageSelect, currentImage, label = 'Upload Image
     setError('');
 
     try {
-      const data = await fetchAPI('/media/upload-from-url', {
+      const data = await fetchAPI<UploadResponse>('/media/upload-from-url', {
         method: 'POST',
         body: JSON.stringify({ url: urlInput, folder }),
       });
 
       // Use relative URL or full URL from response
-      const imageUrl = data.url?.startsWith('http') ? data.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${data.url}`;
+      const imageUrl = getImageUrl(data);
+      if (!imageUrl) {
+        throw new Error('Upload response missing URL');
+      }
       onImageSelect(imageUrl);
       setUrlInput('');
     } catch (err) {
       setError('Failed to load image from URL');
-      console.error(err);
+      logger.error('Image upload from URL failed', err);
     } finally {
       setUploading(false);
     }
@@ -187,3 +206,4 @@ export function ImageUpload({ onImageSelect, currentImage, label = 'Upload Image
     </div>
   );
 }
+

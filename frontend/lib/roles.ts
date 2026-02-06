@@ -3,7 +3,7 @@
 export const USER_ROLES = {
   SUBSCRIBER: {
     name: 'Subscriber',
-    color: 'bg-slate-100 text-slate-700',
+    color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
     description: 'Can read content and manage their profile',
     capabilities: [
       'Read posts and pages',
@@ -13,7 +13,7 @@ export const USER_ROLES = {
   },
   CONTRIBUTOR: {
     name: 'Contributor',
-    color: 'bg-blue-100 text-blue-700',
+    color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200',
     description: 'Can create and edit own posts (needs approval)',
     capabilities: [
       'All Subscriber capabilities',
@@ -24,7 +24,7 @@ export const USER_ROLES = {
   },
   AUTHOR: {
     name: 'Author',
-    color: 'bg-green-100 text-green-700',
+    color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200',
     description: 'Can publish and manage own posts',
     capabilities: [
       'All Contributor capabilities',
@@ -36,7 +36,7 @@ export const USER_ROLES = {
   },
   EDITOR: {
     name: 'Editor',
-    color: 'bg-purple-100 text-purple-700',
+    color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200',
     description: 'Can manage all posts and moderate content',
     capabilities: [
       'All Author capabilities',
@@ -49,7 +49,7 @@ export const USER_ROLES = {
   },
   ADMINISTRATOR: {
     name: 'Administrator',
-    color: 'bg-red-100 text-red-700',
+    color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200',
     description: 'Full control over the website',
     capabilities: [
       'All Editor capabilities',
@@ -62,7 +62,7 @@ export const USER_ROLES = {
   },
   SUPER_ADMIN: {
     name: 'Super Admin',
-    color: 'bg-orange-100 text-orange-700',
+    color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200',
     description: 'Network-wide unrestricted access',
     capabilities: [
       'All Administrator capabilities',

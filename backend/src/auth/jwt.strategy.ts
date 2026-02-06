@@ -5,6 +5,12 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 
+type JwtPayload = {
+  sub?: string;
+  email?: string;
+  role?: string;
+};
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(config: ConfigService) {
@@ -28,13 +34,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
+  async validate(payload: JwtPayload) {
     // This payload comes from the decoded JWT
     // We return what we want to inject into request.user
-    if (!payload.sub) {
-        throw new UnauthorizedException();
+    if (!payload?.sub) {
+      throw new UnauthorizedException();
     }
     // Provide both `id` and `userId` to support different controller expectations
-    return { id: payload.sub, userId: payload.sub, email: payload.email, role: payload.role };
+    return {
+      id: payload.sub,
+      userId: payload.sub,
+      email: payload.email ?? '',
+      role: payload.role ?? '',
+    };
   }
 }

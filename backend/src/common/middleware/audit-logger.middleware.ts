@@ -1,6 +1,7 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuthenticatedRequest } from '../types';
 
 /**
  * Middleware for logging all API requests for audit and security purposes
@@ -12,13 +13,13 @@ export class AuditLoggerMiddleware implements NestMiddleware {
 
   constructor(private prisma: PrismaService) {}
 
-  async use(req: Request, res: Response, next: NextFunction) {
+  async use(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     const startTime = Date.now();
     const { method, originalUrl, ip, headers } = req;
     const userAgent = headers['user-agent'] || 'Unknown';
     
     // Extract user ID from request if authenticated
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     // Log response after it's sent
     res.on('finish', async () => {
@@ -44,8 +45,9 @@ export class AuditLoggerMiddleware implements NestMiddleware {
           userAgent,
           duration,
           timestamp: new Date(),
-        }).catch((error) => {
-          this.logger.error(`Failed to log audit entry: ${error.message}`);
+        }).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.error(`Failed to log audit entry: ${message}`);
         });
       }
     });
@@ -101,8 +103,10 @@ export class AuditLoggerMiddleware implements NestMiddleware {
           createdAt: data.timestamp,
         },
       });
-    } catch (e) {
-      this.logger.error('Failed to write audit log', e);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Failed to write audit log: ${message}`, stack);
     }
   }
 }

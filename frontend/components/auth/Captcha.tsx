@@ -5,6 +5,7 @@ import { RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { usePublicSettings } from '@/contexts/SettingsContext';
 import { CAPTCHA_TYPE, CaptchaType as CaptchaTypeEnum, API_ROUTES } from '@/lib/constants';
 import { api } from '@/lib/api';
+import logger from '@/lib/logger';
 
 export type CaptchaType = CaptchaTypeEnum;
 
@@ -36,7 +37,7 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
       const primary = (settings.captchaType as CaptchaType) || CAPTCHA_TYPE.RECAPTCHA_V2;
       chain.push(primary);
       
-      // Fallback cascade: V3 → V2 → Custom
+      // Fallback cascade: V3 to V2 to Custom
       if (primary !== CAPTCHA_TYPE.RECAPTCHA_V3 && settings.recaptchaV3SiteKey) {
         chain.push(CAPTCHA_TYPE.RECAPTCHA_V3);
       }
@@ -55,10 +56,15 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
   const handleFallback = useCallback(() => {
       if (!currentMethod) return;
       
-      console.warn(`⚠️ Captcha fallback triggered from ${currentMethod}`);
+      logger.warn('Captcha fallback triggered', { component: 'Captcha', currentMethod });
       
       // Mark current method as attempted
-      setAttemptedMethods(prev => new Set([...prev, currentMethod]));
+      setAttemptedMethods((prev) => {
+        const next = new Set<CaptchaType>();
+        prev.forEach((method) => next.add(method));
+        next.add(currentMethod);
+        return next;
+      });
       
       // Find next method in fallback chain that hasn't been attempted
       const nextMethod = fallbackChain.find(method => 
@@ -66,10 +72,10 @@ export function Captcha({ onVerify, type }: CaptchaProps) {
       );
       
       if (nextMethod) {
-        console.log(`✓ Switching to ${nextMethod} captcha`);
+        logger.info('Switching captcha method', { component: 'Captcha', nextMethod });
         setCurrentMethod(nextMethod);
       } else {
-        console.error('❌ All captcha methods exhausted, falling back to custom');
+        logger.error('Captcha methods exhausted, falling back to custom', undefined, { component: 'Captcha' });
         setCurrentMethod(CAPTCHA_TYPE.CUSTOM);
       }
   }, [currentMethod, fallbackChain, attemptedMethods]);
@@ -123,7 +129,10 @@ function RecaptchaV2({ onVerify, onError, siteKey }: { onVerify: (token: string)
     if (typeof window === 'undefined') return;
     if (!siteKey) { onError(); return; }
 
-    const handleError = () => { console.error("Recaptcha V2 Script Error"); onError(); };
+    const handleError = () => {
+      logger.error('Recaptcha V2 script error', undefined, { component: 'Captcha' });
+      onError();
+    };
 
     if (!document.getElementById(scriptId)) {
       const script = document.createElement('script');
@@ -148,20 +157,27 @@ function RecaptchaV2({ onVerify, onError, siteKey }: { onVerify: (token: string)
   useEffect(() => {
     if (isLoaded && containerRef.current && window.grecaptcha && siteKey) {
       try {
-        window.grecaptcha.ready(() => {
-            try {
-                window.grecaptcha.render(containerRef.current!, {
-                    sitekey: siteKey,
-                    callback: onVerify,
-                    'error-callback': onError,
-                    theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
-                });
-            } catch (e) {
-                console.error("V2 Render Exception", e);
-                onError();
-            }
+        const grecaptcha = window.grecaptcha;
+        const ready = grecaptcha?.ready;
+        const render = grecaptcha?.render;
+        if (!ready || !render) return;
+        ready(() => {
+          try {
+            render(containerRef.current!, {
+              sitekey: siteKey,
+              callback: onVerify,
+              'error-callback': onError,
+              theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+            });
+          } catch (e) {
+            logger.error('Recaptcha V2 render exception', e, { component: 'Captcha' });
+            onError();
+          }
         });
-      } catch(e) { onError(); }
+      } catch (e) {
+        logger.error('Recaptcha V2 setup error', e, { component: 'Captcha' });
+        onError();
+      }
     }
   }, [isLoaded, onVerify, onError, siteKey]);
 
@@ -204,14 +220,17 @@ function RecaptchaV3({ onVerify, onError, siteKey }: { onVerify: (token: string)
     }
 
     function executeV3() {
-        if (!window.grecaptcha) return;
-        window.grecaptcha.ready(() => {
-            window.grecaptcha.execute(siteKey!, { action: 'submit' }).then((token: string) => {
-                onVerify(token);
-            }).catch((err: any) => {
-                console.error("V3 Execution Error", err);
-                onError();
-            });
+        const grecaptcha = window.grecaptcha;
+        const ready = grecaptcha?.ready;
+        const execute = grecaptcha?.execute;
+        if (!ready || !execute) return;
+        ready(() => {
+          execute(siteKey!, { action: 'submit' }).then((token: string) => {
+            onVerify(token);
+          }).catch((err: unknown) => {
+            logger.error('Recaptcha V3 execution error', err, { component: 'Captcha' });
+            onError();
+          });
         });
     }
   }, [siteKey, onError, onVerify]);
@@ -229,17 +248,23 @@ function CustomCaptcha({ onVerify }: { onVerify: (token: string, id: string) => 
         setLoading(true);
         setVerified(false);
         try {
-            const data = await api(API_ROUTES.CAPTCHA.CHALLENGE) as {image: string, captchaId: string};
-            if (data && data.image && data.captchaId) {
-                setChallenge(data);
+            const data = await api(API_ROUTES.CAPTCHA.CHALLENGE);
+            const payload = data && typeof data === 'object'
+              ? {
+                  image: typeof (data as { image?: unknown }).image === 'string' ? (data as { image: string }).image : '',
+                  captchaId: typeof (data as { captchaId?: unknown }).captchaId === 'string' ? (data as { captchaId: string }).captchaId : '',
+                }
+              : { image: '', captchaId: '' };
+            if (payload.image && payload.captchaId) {
+                setChallenge(payload);
                 setInput('');
                 // Reset parent token to ensure invalid state until typed
                 onVerify('', '');
             } else {
-                console.error("Invalid captcha challenge response", data);
+                logger.error('Invalid captcha challenge response', data, { component: 'Captcha' });
             }
-        } catch (e) {
-            console.error("Failed to load captcha challenge", e);
+        } catch (e: unknown) {
+            logger.error('Failed to load captcha challenge', e, { component: 'Captcha' });
         } finally {
             setLoading(false);
         }
@@ -292,7 +317,6 @@ function CustomCaptcha({ onVerify }: { onVerify: (token: string, id: string) => 
             </div>
             <div className="flex gap-3">
                 <div className="relative h-12 w-32 bg-card rounded border border-border overflow-hidden select-none flex items-center justify-center">
-                     {/* eslint-disable-next-line @next/next/no-img-element */}
                      <img src={challenge.image} alt="Captcha" className="h-full w-full object-cover" draggable={false} />
                 </div>
                 <input 
@@ -316,8 +340,4 @@ function CustomCaptcha({ onVerify }: { onVerify: (token: string, id: string) => 
     );
 }
 
-declare global {
-  interface Window {
-    grecaptcha: any;
-  }
-}
+

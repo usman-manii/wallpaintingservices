@@ -1,6 +1,8 @@
 // frontend/app/(admin)/profile/page.tsx
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchAPI } from '@/lib/api';
@@ -10,15 +12,53 @@ import { Input } from '@/components/ui/Input';
 import { User, Mail, Globe, Save } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { getErrorMessage } from '@/lib/error-utils';
+
+type Profile = {
+    username?: string;
+    role?: string;
+    email?: string;
+    isEmailVerified?: boolean;
+    firstName?: string;
+    lastName?: string;
+    phoneNumber?: string;
+    countryCode?: string;
+    website?: string;
+    description?: string;
+};
+
+function parseProfile(value: unknown): Profile | null {
+    if (!value || typeof value !== 'object') return null;
+    const obj = value as Record<string, unknown>;
+    return {
+        username: typeof obj.username === 'string' ? obj.username : undefined,
+        role: typeof obj.role === 'string' ? obj.role : undefined,
+        email: typeof obj.email === 'string' ? obj.email : undefined,
+        isEmailVerified: typeof obj.isEmailVerified === 'boolean' ? obj.isEmailVerified : undefined,
+        firstName: typeof obj.firstName === 'string' ? obj.firstName : undefined,
+        lastName: typeof obj.lastName === 'string' ? obj.lastName : undefined,
+        phoneNumber: typeof obj.phoneNumber === 'string' ? obj.phoneNumber : undefined,
+        countryCode: typeof obj.countryCode === 'string' ? obj.countryCode : undefined,
+        website: typeof obj.website === 'string' ? obj.website : undefined,
+        description: typeof obj.description === 'string' ? obj.description : undefined,
+    };
+}
+
+function extractRequestId(value: unknown): string | null {
+    if (!value || typeof value !== 'object') return null;
+    const obj = value as Record<string, unknown>;
+    return typeof obj.requestId === 'string' ? obj.requestId : null;
+}
 
 export default function ProfilePage() {
     const router = useRouter();
     const { success, error: showError } = useToast();
-    const [profile, setProfile] = useState<any>(null);
+    const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
     const [emailChangeStatus, setEmailChangeStatus] = useState<string>('');
+    const [verificationSending, setVerificationSending] = useState(false);
 
     useEffect(() => {
         fetchProfile();
@@ -27,9 +67,9 @@ export default function ProfilePage() {
     async function fetchProfile() {
         try {
             const data = await fetchAPI('/auth/profile', { redirectOn401: false });
-            setProfile(data);
-        } catch (err) {
-            console.error('Failed to load profile', err);
+            setProfile(parseProfile(data));
+        } catch (err: unknown) {
+            logger.error('Failed to load profile', err, { component: 'ProfilePage' });
         } finally {
             setLoading(false);
         }
@@ -46,8 +86,8 @@ export default function ProfilePage() {
              setMessage('Profile updated successfully');
              // Refresh profile to get updated data (e.g. formatting)
              fetchProfile();
-        } catch (err: any) {
-            setMessage(err.message || 'Error updating profile');
+        } catch (err: unknown) {
+            setMessage(getErrorMessage(err, 'Error updating profile'));
         } finally {
             setSaving(false);
         }
@@ -85,15 +125,29 @@ export default function ProfilePage() {
                });
                success('Email change requested. Please check your inbox for verification codes.');
                setNewEmailInput('');
-               if (res.requestId) {
-                  router.push(`/verify-email?requestId=${res.requestId}`);
+               const requestId = extractRequestId(res);
+               if (requestId) {
+                  router.push(`/verify-email?requestId=${requestId}`);
                }
-            } catch (err: any) {
-                showError(err.message || 'Failed to request email change');
+            } catch (err: unknown) {
+                showError(getErrorMessage(err, 'Failed to request email change'));
             }
           },
           'info'
         );
+    }
+
+    async function handleResendVerification() {
+        if (!profile?.email || profile.isEmailVerified) return;
+        try {
+            setVerificationSending(true);
+            await fetchAPI('/auth/verify-email/request', { method: 'POST', redirectOn401: false });
+            success('Verification email sent. Please check your inbox.');
+        } catch (err: unknown) {
+            showError(getErrorMessage(err, 'Failed to send verification email'));
+        } finally {
+            setVerificationSending(false);
+        }
     }
 
     if (loading) return <div className="p-8">Loading profile...</div>;
@@ -122,8 +176,20 @@ export default function ProfilePage() {
                         </span>
                         <p className="text-sm text-muted-foreground mt-4">
                             {profile.email} 
-                            {profile.isEmailVerified && <span className="text-green-500 ml-1">✓</span>}
+                            {profile.isEmailVerified && <span className="text-green-500 ml-1">*</span>}
                         </p>
+                        {!profile.isEmailVerified && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3 w-full"
+                            isLoading={verificationSending}
+                            disabled={verificationSending}
+                            onClick={handleResendVerification}
+                          >
+                            Verify Email
+                          </Button>
+                        )}
                         <Button variant="outline" size="sm" className="mt-4 w-full" onClick={handleEmailChange}>
                             Change Email
                         </Button>
@@ -213,3 +279,5 @@ export default function ProfilePage() {
         </div>
     );
 }
+
+

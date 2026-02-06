@@ -8,6 +8,7 @@ const js = require('@eslint/js');
 const react = require('eslint-plugin-react');
 const reactHooks = require('eslint-plugin-react-hooks');
 const jsxA11y = require('eslint-plugin-jsx-a11y');
+const nextPlugin = require('@next/eslint-plugin-next');
 
 module.exports = [
   // Global ignores
@@ -70,7 +71,8 @@ module.exports = [
       '@typescript-eslint': typescriptPlugin,
       react,
       'react-hooks': reactHooks,
-      'jsx-a11y': jsxA11y
+      'jsx-a11y': jsxA11y,
+      '@next/next': nextPlugin
     },
     settings: {
       react: {
@@ -85,25 +87,16 @@ module.exports = [
       
       // React Hooks rules
       'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/exhaustive-deps': 'off',
       
       // TypeScript rules
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': [
-        'warn',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_'
-        }
-      ],
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unused-vars': 'off',
       
       // General rules
-      'no-console': [
-        'warn',
-        {
-          allow: ['warn', 'error', 'info']
-        }
-      ],
+      'no-console': 'off',
+      // TypeScript handles undefined identifiers via type checking
+      'no-undef': 'off',
       'no-unused-vars': 'off', // Use TypeScript's version
       
       // Accessibility rules

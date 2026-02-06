@@ -18,6 +18,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Public } from '../auth/public.decorator';
+import { AuthenticatedRequest } from '../common/types';
+import { Prisma } from '@prisma/client';
 
 @Controller('pages')
 export class PageBuilderController {
@@ -33,12 +35,12 @@ export class PageBuilderController {
   @Roles('AUTHOR', 'EDITOR', 'ADMINISTRATOR', 'SUPER_ADMIN')
   @Get()
   async getAllPages(
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Query('status') status?: string,
     @Query('pageType') pageType?: string,
     @Query('authorId') authorId?: string,
   ) {
-    this.logger.log('✅ GET /pages endpoint called');
+    this.logger.log('GET /pages endpoint called');
     this.logger.log('Request user:', req.user ? { id: req.user.id, role: req.user.role } : 'No user');
     
     // For AUTHOR role, only show their own pages unless explicitly filtering by another author
@@ -66,14 +68,12 @@ export class PageBuilderController {
         authorId: finalAuthorId 
       });
       
-      this.logger.log(`✅ Returning ${pages.pages?.length || 0} pages from database`);
+      this.logger.log(` Returning ${pages.pages?.length || 0} pages from database`);
       
       // Return the full paginated response
       return pages;
-      
-      return pages;
     } catch (error) {
-      this.logger.error('❌ Error in getAllPages:', error);
+      this.logger.error('Error in getAllPages:', error);
       throw error;
     }
   }
@@ -81,7 +81,7 @@ export class PageBuilderController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('AUTHOR', 'EDITOR', 'ADMINISTRATOR', 'SUPER_ADMIN')
   @Post()
-  async createPage(@Body() dto: CreatePageDto, @Request() req: any) {
+  async createPage(@Body() dto: CreatePageDto, @Request() req: AuthenticatedRequest) {
     return this.pageBuilderService.createPage(dto, req.user.userId);
   }
 
@@ -130,7 +130,7 @@ export class PageBuilderController {
   async updatePage(
     @Param('id') id: string,
     @Body() dto: UpdatePageDto,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.pageBuilderService.updatePage(id, dto, req.user.userId);
   }
@@ -145,7 +145,7 @@ export class PageBuilderController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('AUTHOR', 'EDITOR', 'ADMINISTRATOR', 'SUPER_ADMIN')
   @Post(':id/duplicate')
-  async duplicatePage(@Param('id') id: string, @Request() req: any) {
+  async duplicatePage(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.pageBuilderService.duplicatePage(id, req.user.userId);
   }
 
@@ -164,7 +164,7 @@ export class PageBuilderController {
   async restoreVersion(
     @Param('id') id: string,
     @Param('versionNumber') versionNumber: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.pageBuilderService.restoreVersion(id, parseInt(versionNumber), req.user.userId);
   }
@@ -174,7 +174,7 @@ export class PageBuilderController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('AUTHOR', 'EDITOR', 'ADMINISTRATOR', 'SUPER_ADMIN')
   @Post('components')
-  async createComponent(@Body() dto: CreateComponentDto, @Request() req: any) {
+  async createComponent(@Body() dto: CreateComponentDto, @Request() req: AuthenticatedRequest) {
     return this.pageBuilderService.createComponent(dto, req.user.userId);
   }
 
@@ -247,7 +247,7 @@ export class PageBuilderController {
   async createPageFromTemplate(
     @Param('id') id: string,
     @Body() body: { title: string; slug: string },
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.pageBuilderService.createPageFromTemplate(
       id,
@@ -268,7 +268,9 @@ export class PageBuilderController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMINISTRATOR', 'SUPER_ADMIN')
   @Put('global-sections/:id')
-  async updateGlobalSection(@Param('id') id: string, @Body() body: any) {
+  async updateGlobalSection(@Param('id') id: string, @Body() body: Prisma.GlobalSectionUpdateInput) {
     return this.pageBuilderService.updateGlobalSection(id, body);
   }
 }
+
+

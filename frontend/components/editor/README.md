@@ -56,7 +56,7 @@ function BlogPostForm() {
 
   const handleChange = (html: string, text: string, wordCount: number) => {
     setContent(html);
-    console.log(`Word count: ${wordCount}`);
+    logger.debug(`Word count: ${wordCount}`);
   };
 
   const handleImageUpload = async (file: File): Promise<string> => {
@@ -157,3 +157,4 @@ You can customize the appearance by overriding CSS variables or classes.
 ## License
 
 Part of the Wall Painting Services CMS project.
+

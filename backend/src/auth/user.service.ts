@@ -12,10 +12,33 @@ export class UserService {
     private mailService: MailService,
   ) {}
 
+  private getFormattedDisplayName(user: {
+    displayName?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    nickname?: string | null;
+    email: string;
+    username: string;
+  }): string {
+    const displayType = user.displayName || 'username';
+
+    switch (displayType) {
+      case 'firstName':
+        return user.firstName || user.username;
+      case 'lastName':
+        return user.lastName || user.username;
+      case 'nickname':
+        return user.nickname || user.username;
+      case 'email':
+        return user.email;
+      default:
+        return user.username;
+    }
+  }
+
   async getUserById(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      // @ts-ignore
       select: {
         id: true,
         username: true,
@@ -24,6 +47,8 @@ export class UserService {
         lastName: true,
         nickname: true,
         displayName: true,
+        isEmailVerified: true,
+        emailVerifiedAt: true,
         language: true,
         website: true,
         facebook: true,
@@ -46,20 +71,14 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    // Cast to any to avoid type mismatch with generated client
-    const userWithCount = user as any;
-
     return {
       ...user,
-      postsCount: userWithCount._count?.posts || 0,
-       // Suppress potential phoneNumber type issue if schema isn't synced
-      phoneNumber: userWithCount.phoneNumber,
+      postsCount: user._count?.posts || 0,
     };
   }
 
   async getAllUsers() {
     const users = await this.prisma.user.findMany({
-      // @ts-ignore - Phone number exists in schema but type might lag
       select: {
         id: true,
         username: true,
@@ -67,6 +86,8 @@ export class UserService {
         firstName: true,
         lastName: true,
         displayName: true,
+        isEmailVerified: true,
+        emailVerifiedAt: true,
         role: true,
         phoneNumber: true,
         countryCode: true,
@@ -80,14 +101,11 @@ export class UserService {
       },
     });
 
-    return users.map(user => {
-       const u = user as any;
-       return {
-        ...user,
-        postsCount: u._count?.posts || 0,
-        displayNameFormatted: this.getFormattedDisplayName(user),
-       };
-    });
+    return users.map((user) => ({
+      ...user,
+      postsCount: user._count?.posts || 0,
+      displayNameFormatted: this.getFormattedDisplayName(user),
+    }));
   }
 
   async updateUserProfile(userId: string, data: UpdateUserProfileDto) {
@@ -291,20 +309,4 @@ export class UserService {
     });
   }
 
-  private getFormattedDisplayName(user: any): string {
-    const displayType = user.displayName || 'username';
-    
-    switch (displayType) {
-      case 'firstName':
-        return user.firstName || user.username;
-      case 'lastName':
-        return user.lastName || user.username;
-      case 'nickname':
-        return user.nickname || user.username;
-      case 'email':
-        return user.email;
-      default:
-        return user.username;
-    }
-  }
 }

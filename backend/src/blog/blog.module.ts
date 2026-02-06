@@ -4,6 +4,7 @@ import { BlogService } from './blog.service';
 import { BlogController } from './blog.controller';
 import { BlogSEOController } from './blog-seo.controller';
 import { AiBlogController } from './ai-blog.controller';
+import { TagsController } from './tags.controller';
 import { EnhancedBlogService } from './enhanced-blog.service';
 import { SEOAuditService } from './seo-audit.service';
 import { AiBlogService } from './ai-blog.service';
@@ -12,7 +13,7 @@ import { AiModule } from '../ai/ai.module';
 
 @Module({
   imports: [PrismaModule, AiModule],
-  controllers: [BlogController, BlogSEOController, AiBlogController],
+  controllers: [BlogController, BlogSEOController, AiBlogController, TagsController],
   providers: [BlogService, EnhancedBlogService, SEOAuditService, AiBlogService],
   exports: [BlogService, EnhancedBlogService, SEOAuditService, AiBlogService], // Export for Queue and Tasks
 })

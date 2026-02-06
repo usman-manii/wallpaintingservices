@@ -3,12 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Switch } from '@/components/ui/Switch';
-import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
 import { Save, ArrowLeft, FileText, TrendingUp, MessageSquare, Folder, User, Share2 } from 'lucide-react';
+import logger from '@/lib/logger';
+import { getErrorMessage } from '@/lib/error-utils';
+import type { JsonValue } from '@/types/json';
 
 interface Widget {
   id: string;
@@ -16,7 +18,7 @@ interface Widget {
   name: string;
   description: string;
   enabled: boolean;
-  settings?: any;
+  settings?: Record<string, JsonValue>;
 }
 
 const availableWidgets: Widget[] = [
@@ -28,26 +30,47 @@ const availableWidgets: Widget[] = [
   { id: 'social-sharing', type: 'social-sharing', name: 'Social Sharing', description: 'Social media sharing buttons', enabled: false },
 ];
 
+function extractSavedWidgets(value: unknown): Widget[] {
+  if (!value || typeof value !== 'object') return [];
+  const obj = value as Record<string, unknown>;
+  const widgetConfig = obj.widgetConfig && typeof obj.widgetConfig === 'object' ? (obj.widgetConfig as Record<string, unknown>) : null;
+  const widgetsValue = widgetConfig && Array.isArray(widgetConfig.widgets) ? widgetConfig.widgets : [];
+
+  return widgetsValue.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const widgetObj = item as Record<string, unknown>;
+    if (typeof widgetObj.id !== 'string') return [];
+    const widget: Widget = {
+      id: widgetObj.id,
+      type: typeof widgetObj.type === 'string' ? widgetObj.type : widgetObj.id,
+      name: typeof widgetObj.name === 'string' ? widgetObj.name : widgetObj.id,
+      description: typeof widgetObj.description === 'string' ? widgetObj.description : '',
+      enabled: typeof widgetObj.enabled === 'boolean' ? widgetObj.enabled : false,
+      settings: widgetObj.settings && typeof widgetObj.settings === 'object'
+        ? (widgetObj.settings as Record<string, JsonValue>)
+        : undefined,
+    };
+    return [widget];
+  });
+}
+
 export default function WidgetsPage() {
   const router = useRouter();
   const { success, error: showError } = useToast();
   const [widgets, setWidgets] = useState<Widget[]>(availableWidgets);
   const [loading, setLoading] = useState(true);
-  const [editingWidget, setEditingWidget] = useState<Widget | null>(null);
-  const [widgetSettings, setWidgetSettings] = useState<any>({});
 
   const loadWidgets = useCallback(async () => {
     try {
       const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
-      if (data?.widgetConfig?.widgets) {
-        const savedWidgets = data.widgetConfig.widgets;
-        setWidgets(availableWidgets.map(w => {
-          const saved = savedWidgets.find((sw: any) => sw.id === w.id);
-          return saved ? { ...w, ...saved } : w;
-        }));
+      const savedWidgets = extractSavedWidgets(data);
+      if (savedWidgets.length > 0) {
+        const savedMap = new Map(savedWidgets.map((saved) => [saved.id, saved]));
+        setWidgets(availableWidgets.map((w) => ({ ...w, ...(savedMap.get(w.id) || {}) })));
       }
-    } catch (e: any) {
-      showError(e.message || 'Failed to load widgets');
+    } catch (e: unknown) {
+      logger.error('Failed to load widgets', e, { component: 'WidgetsPage' });
+      showError(getErrorMessage(e, 'Failed to load widgets'));
     } finally {
       setLoading(false);
     }
@@ -66,8 +89,9 @@ export default function WidgetsPage() {
         cache: 'no-store',
       });
       success('Widget configuration saved successfully!');
-    } catch (e: any) {
-      showError(e.message || 'Failed to save widget configuration');
+    } catch (e: unknown) {
+      logger.error('Failed to save widget configuration', e, { component: 'WidgetsPage' });
+      showError(getErrorMessage(e, 'Failed to save widget configuration'));
     }
   }
 
@@ -135,3 +159,4 @@ export default function WidgetsPage() {
     </div>
   );
 }
+

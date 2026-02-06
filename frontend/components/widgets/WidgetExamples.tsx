@@ -1,6 +1,7 @@
 // Example usage of the new Page Builder widgets
 
 import { HeadingWidget, TextWidget, ImageWidget } from '@/components/widgets';
+import logger from '@/lib/logger';
 
 export default function PageBuilderExample() {
   return (
@@ -17,7 +18,7 @@ export default function PageBuilderExample() {
           color="#1e293b"
           alignment="center"
           editable={true}
-          onChange={(data) => console.log('Heading changed:', data)}
+          onChange={(data) => logger.debug('Heading changed', { component: 'PageBuilderExample', data })}
         />
       </div>
 
@@ -40,7 +41,7 @@ export default function PageBuilderExample() {
         <TextWidget
           content="<p>This is an editable text widget with <strong>bold</strong>, <em>italic</em>, and <u>underline</u> support.</p>"
           editable={true}
-          onChange={(content) => console.log('Text changed:', content)}
+          onChange={(content) => logger.debug('Text changed', { component: 'PageBuilderExample', content })}
         />
       </div>
 
@@ -64,7 +65,7 @@ export default function PageBuilderExample() {
           alignment="center"
           caption="A stunning landscape photograph"
           editable={true}
-          onChange={(data) => console.log('Image changed:', data)}
+          onChange={(data) => logger.debug('Image changed', { component: 'PageBuilderExample', data })}
         />
       </div>
 

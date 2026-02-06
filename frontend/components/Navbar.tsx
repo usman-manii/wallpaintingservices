@@ -146,9 +146,9 @@ export function Navbar() {
                   Login
                 </Button>
               </NavLink>
-              <NavLink href="/auth?mode=signup" onNavigate={router.push}>
-                <Button className="px-4" ariaLabel="Sign up for an account">
-                  Sign Up
+              <NavLink href="/join-us" onNavigate={router.push}>
+                <Button className="px-4" ariaLabel="Join the platform">
+                  Join Us
                 </Button>
               </NavLink>
             </div>
@@ -167,7 +167,7 @@ type NavLinkProps = React.PropsWithChildren<{
 }>;
 
 /**
- * Lightweight client-side nav link to avoid any ambiguity with the Next.js Link
+ * Lightweight client-side nav link to avoid ambiguity with the Next.js Link
  * module shape when running under webpack + React 19. Falls back to normal
  * anchor for middle-click/open-in-new-tab.
  */

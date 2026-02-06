@@ -3,18 +3,28 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { Image as ImageIcon, Upload } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Image as ImageIcon } from 'lucide-react';
+
+type ImageAlignment = 'left' | 'center' | 'right';
+
+type ImageConfig = {
+  src: string;
+  alt: string;
+  width: string;
+  height: string;
+  alignment: ImageAlignment;
+  caption: string;
+};
 
 interface ImageWidgetProps {
   src?: string;
   alt?: string;
   width?: string;
   height?: string;
-  alignment?: 'left' | 'center' | 'right';
+  alignment?: ImageAlignment;
   caption?: string;
   editable?: boolean;
-  onChange?: (data: any) => void;
+  onChange?: (data: ImageConfig) => void;
 }
 
 export default function ImageWidget({
@@ -48,7 +58,7 @@ export default function ImageWidget({
   }, [localSrc, localAlt, localWidth, localHeight, localAlignment, localCaption]);
 
   const getContainerStyle = () => {
-    const styles: any = {
+    const styles: React.CSSProperties = {
       display: 'flex',
       justifyContent: localAlignment === 'left' ? 'flex-start' : localAlignment === 'right' ? 'flex-end' : 'center',
       marginBottom: '1rem',

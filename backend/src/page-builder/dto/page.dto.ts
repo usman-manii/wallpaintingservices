@@ -1,4 +1,5 @@
 import { IsString, IsOptional, IsBoolean, IsEnum, IsArray, IsObject, IsDateString, ValidateIf } from 'class-validator';
+import { JsonValue } from '../../common/types/json';
 
 export enum PageStatus {
   DRAFT = 'DRAFT',
@@ -47,7 +48,7 @@ export class CreatePageDto {
   @IsObject()
   @ValidateIf((_, value) => typeof value === 'string')
   @IsString()
-  content?: any;
+  content?: JsonValue;
 
   @IsOptional()
   @IsString()
@@ -87,15 +88,15 @@ export class CreatePageDto {
 
   @IsOptional()
   @IsObject()
-  metaTags?: any;
+  metaTags?: JsonValue;
 
   @IsOptional()
   @IsObject()
-  mobileContent?: any;
+  mobileContent?: JsonValue;
 
   @IsOptional()
   @IsObject()
-  tabletContent?: any;
+  tabletContent?: JsonValue;
 
   @IsOptional()
   @IsString()
@@ -176,7 +177,7 @@ export class UpdatePageDto {
   @IsObject()
   @ValidateIf((_, value) => typeof value === 'string')
   @IsString()
-  content?: any;
+  content?: JsonValue;
 
   @IsOptional()
   @IsString()
@@ -216,15 +217,15 @@ export class UpdatePageDto {
 
   @IsOptional()
   @IsObject()
-  metaTags?: any;
+  metaTags?: JsonValue;
 
   @IsOptional()
   @IsObject()
-  mobileContent?: any;
+  mobileContent?: JsonValue;
 
   @IsOptional()
   @IsObject()
-  tabletContent?: any;
+  tabletContent?: JsonValue;
 
   @IsOptional()
   @IsString()
@@ -282,7 +283,7 @@ export class CreateComponentDto {
   category: string;
 
   @IsObject()
-  content: any;
+  content: JsonValue;
 
   @IsOptional()
   @IsString()
@@ -325,7 +326,7 @@ export class CreateTemplateDto {
   preview?: string;
 
   @IsObject()
-  content: any;
+  content: JsonValue;
 
   @IsString()
   category: string;

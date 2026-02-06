@@ -15,6 +15,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { MediaService } from './media.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthenticatedRequest } from '../common/types';
 
 @Controller('media')
 @UseGuards(JwtAuthGuard)
@@ -26,7 +27,7 @@ export class MediaController {
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @Body('folder') folder: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     const userId = req.user.id || req.user.userId;
     return this.mediaService.uploadFile(file, userId, folder || 'uploads');
@@ -36,7 +37,7 @@ export class MediaController {
   async uploadFromUrl(
     @Body('url') url: string,
     @Body('folder') folder: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     const userId = req.user.id || req.user.userId;
     return this.mediaService.uploadFromUrl(url, userId, folder || 'uploads');
@@ -44,10 +45,10 @@ export class MediaController {
 
   @Get()
   async listMedia(
+    @Request() req: AuthenticatedRequest,
     @Query('folder') folder?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
-    @Request() req?: any,
   ) {
     // For admin panel, use higher default limit to show more files
     const limitValue = Math.min(Math.max(parseInt(limit || '100', 10), 1), 200);
@@ -61,7 +62,7 @@ export class MediaController {
   }
 
   @Get(':id')
-  async getMedia(@Param('id') id: string, @Request() req: any) {
+  async getMedia(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.mediaService.getMedia(id, req.user.id || req.user.userId, req.user.role);
   }
 
@@ -69,13 +70,13 @@ export class MediaController {
   async updateMedia(
     @Param('id') id: string,
     @Body() data: { title?: string; description?: string; altText?: string; tags?: string[] },
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.mediaService.updateMedia(id, data, req.user.id || req.user.userId, req.user.role);
   }
 
   @Delete(':id')
-  async deleteMedia(@Param('id') id: string, @Request() req: any) {
+  async deleteMedia(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.mediaService.deleteMedia(id, req.user.id || req.user.userId, req.user.role);
   }
 }

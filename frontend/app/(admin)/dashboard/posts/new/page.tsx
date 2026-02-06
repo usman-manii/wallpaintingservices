@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -10,6 +12,65 @@ import RichTextEditor from '@/components/editor/RichTextEditor';
 import { FieldLabel, InlineHelp } from '@/components/ui/HelpText';
 import { useToast } from '@/components/ui/Toast';
 import { fetchAPI } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-utils';
+
+type PostStatus = 'DRAFT' | 'PUBLISHED' | 'SCHEDULED';
+
+type NewPostFormData = {
+  title: string;
+  slug: string;
+  excerpt: string;
+  content: string;
+  featuredImage: string;
+  status: PostStatus;
+  scheduledFor: string;
+  categories: string[];
+  tags: string[];
+};
+
+type OptionItem = {
+  id: string;
+  name: string;
+};
+
+type SeoPreview = {
+  title: string;
+  description: string;
+  readingTime: number;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseOptionItem = (value: unknown): OptionItem | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  const name = parseString(value.name);
+  if (!id || !name) {
+    return null;
+  }
+  return { id, name };
+};
+
+const parseOptionList = (value: unknown): OptionItem[] => (
+  Array.isArray(value)
+    ? value.map(parseOptionItem).filter((item): item is OptionItem => !!item)
+    : []
+);
+
+const parseUploadUrl = (value: unknown): string => {
+  if (!isRecord(value)) {
+    return '';
+  }
+  return parseString(value.url) || parseString(value.path);
+};
 
 export default function NewPostPage() {
   const router = useRouter();
@@ -20,7 +81,7 @@ export default function NewPostPage() {
   useEffect(() => {
     setOrigin(window.location.origin);
   }, []);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<NewPostFormData>({
     title: '',
     slug: '',
     excerpt: '',
@@ -28,13 +89,13 @@ export default function NewPostPage() {
     featuredImage: '',
     status: 'DRAFT',
     scheduledFor: '',
-    categories: [] as string[],
-    tags: [] as string[],
+    categories: [],
+    tags: [],
   });
 
-  const [availableCategories, setAvailableCategories] = useState<any[]>([]);
-  const [availableTags, setAvailableTags] = useState<any[]>([]);
-  const [seoPreview, setSeoPreview] = useState({
+  const [availableCategories, setAvailableCategories] = useState<OptionItem[]>([]);
+  const [availableTags, setAvailableTags] = useState<OptionItem[]>([]);
+  const [seoPreview, setSeoPreview] = useState<SeoPreview>({
     title: '',
     description: '',
     readingTime: 0,
@@ -51,15 +112,16 @@ export default function NewPostPage() {
         fetchAPI('/blog/admin/tags', { redirectOn401: false, cache: 'no-store' }).catch(() => []),
       ]);
       
-      setAvailableCategories(Array.isArray(categories) ? categories : []);
-      setAvailableTags(Array.isArray(tags) ? tags : []);
-    } catch (error) {
-      console.error('Error fetching categories/tags:', error);
+      setAvailableCategories(parseOptionList(categories));
+      setAvailableTags(parseOptionList(tags));
+    } catch (error: unknown) {
+      logger.error('Error fetching categories/tags:', error);
       // Fallback to empty arrays on error
       setAvailableCategories([]);
       setAvailableTags([]);
+      showError(getErrorMessage(error, 'Failed to load categories or tags'));
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     fetchCategoriesAndTags();
@@ -77,16 +139,19 @@ export default function NewPostPage() {
         redirectOn401: false,
         cache: 'no-store',
       });
-      if (newCat && newCat.id) {
-        setAvailableCategories([...availableCategories, newCat]);
-        setFormData(prev => ({ ...prev, categories: [...prev.categories, newCat.id] }));
+      const parsedCategory = parseOptionItem(newCat);
+      if (parsedCategory) {
+        setAvailableCategories([...availableCategories, parsedCategory]);
+        setFormData(prev => ({ ...prev, categories: [...prev.categories, parsedCategory.id] }));
         setNewCategoryName('');
         setShowNewCategory(false);
         success('Category created successfully');
+      } else {
+        showError('Category created, but the response was missing required data.');
       }
-    } catch (error: any) {
-      console.error('Error creating category:', error);
-      showError(error.message || 'Failed to create category');
+    } catch (error: unknown) {
+      logger.error('Error creating category:', error);
+      showError(getErrorMessage(error, 'Failed to create category'));
     }
   };
 
@@ -102,16 +167,19 @@ export default function NewPostPage() {
         redirectOn401: false,
         cache: 'no-store',
       });
-      if (newTag && newTag.id) {
-        setAvailableTags([...availableTags, newTag]);
-        setFormData(prev => ({ ...prev, tags: [...prev.tags, newTag.id] }));
+      const parsedTag = parseOptionItem(newTag);
+      if (parsedTag) {
+        setAvailableTags([...availableTags, parsedTag]);
+        setFormData(prev => ({ ...prev, tags: [...prev.tags, parsedTag.id] }));
         setNewTagName('');
         setShowNewTag(false);
         success('Tag created successfully');
+      } else {
+        showError('Tag created, but the response was missing required data.');
       }
-    } catch (error: any) {
-      console.error('Error creating tag:', error);
-      showError(error.message || 'Failed to create tag');
+    } catch (error: unknown) {
+      logger.error('Error creating tag:', error);
+      showError(getErrorMessage(error, 'Failed to create tag'));
     }
   };
 
@@ -163,11 +231,15 @@ export default function NewPostPage() {
         cache: 'no-store',
       });
 
-      // Return full URL if relative, or use as-is if absolute
-      return data.url?.startsWith('http') ? data.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${data.url}`;
-    } catch (error: any) {
-      console.error('Image upload error:', error);
-      throw new Error(error.message || 'Upload failed');
+      const uploadedUrl = parseUploadUrl(data);
+      if (!uploadedUrl) {
+        throw new Error('Upload succeeded but no URL was returned');
+      }
+      const baseUrl = origin || (typeof window !== 'undefined' ? window.location.origin : '');
+      return uploadedUrl.startsWith('http') ? uploadedUrl : `${baseUrl}${uploadedUrl}`;
+    } catch (error: unknown) {
+      logger.error('Image upload error:', error);
+      throw new Error(getErrorMessage(error, 'Upload failed'));
     }
   };
 
@@ -191,7 +263,7 @@ export default function NewPostPage() {
     setLoading(true);
 
     try {
-      const post = await fetchAPI('/blog/manual', {
+      await fetchAPI('/blog/manual', {
         method: 'POST',
         body: JSON.stringify({
           ...formData,
@@ -203,9 +275,9 @@ export default function NewPostPage() {
 
       success('Post created successfully with auto-generated tags, SEO, and internal links!');
       router.push('/dashboard/posts');
-    } catch (error: any) {
-      console.error('Error creating post:', error);
-      showError(error.message || 'Failed to create post. Please try again.');
+    } catch (error: unknown) {
+      logger.error('Error creating post:', error);
+      showError(getErrorMessage(error, 'Failed to create post. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -521,17 +593,17 @@ export default function NewPostPage() {
                 {seoPreview.description || 'Your post excerpt or first 155 characters of content will appear here...'}
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-500 mt-2">
-                ⏱️ {seoPreview.readingTime} min read
+              Reading time: {seoPreview.readingTime} min
               </div>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-3">
-              ✨ SEO fields (title, description, keywords, OG tags) will be auto-generated on save
+              SEO fields (title, description, keywords, OG tags) will be auto-generated on save
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              🏷️ Tags will be auto-extracted from content keywords
+              Tags will be auto-extracted from content keywords
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              🔗 Internal links will be auto-generated to related posts
+              Internal links will be auto-generated to related posts
             </p>
           </CardContent>
         </Card>
@@ -558,7 +630,7 @@ export default function NewPostPage() {
                   }`}
                 >
                   <div className="text-center">
-                    <div className="text-2xl mb-2">📝</div>
+                    <div className="text-2xl mb-2">Draft</div>
                     <div className="font-semibold text-slate-900 dark:text-white">Save as Draft</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Save for later</div>
                   </div>
@@ -574,7 +646,7 @@ export default function NewPostPage() {
                   }`}
                 >
                   <div className="text-center">
-                    <div className="text-2xl mb-2">🚀</div>
+                    <div className="text-2xl mb-2">Publish</div>
                     <div className="font-semibold text-slate-900 dark:text-white">Publish Immediately</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Go live now</div>
                   </div>
@@ -599,7 +671,7 @@ export default function NewPostPage() {
                   }`}
                 >
                   <div className="text-center">
-                    <div className="text-2xl mb-2">⏰</div>
+                    <div className="text-2xl mb-2">Schedule</div>
                     <div className="font-semibold text-slate-900 dark:text-white">Schedule for Later</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Pick date & time</div>
                   </div>
@@ -611,7 +683,7 @@ export default function NewPostPage() {
             {formData.scheduledFor && (
               <div className="mt-4 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  📅 Schedule Date & Time
+                  Schedule Date & Time
                 </label>
                 <Input
                   type="datetime-local"
@@ -620,7 +692,7 @@ export default function NewPostPage() {
                   className="mb-2"
                 />
                 <p className="text-sm text-orange-700 dark:text-orange-300">
-                  ⏰ This post will be automatically published on: <strong>{new Date(formData.scheduledFor).toLocaleString()}</strong>
+                  This post will be automatically published on: <strong>{new Date(formData.scheduledFor).toLocaleString()}</strong>
                 </p>
                 <Button
                   type="button"
@@ -640,15 +712,15 @@ export default function NewPostPage() {
                 <span className="font-medium text-slate-700 dark:text-slate-300">Current Status:</span>
                 {formData.scheduledFor ? (
                   <span className="text-orange-600 dark:text-orange-400 font-semibold">
-                    ⏰ Scheduled
+                    Scheduled
                   </span>
                 ) : formData.status === 'PUBLISHED' ? (
                   <span className="text-green-600 dark:text-green-400 font-semibold">
-                    ✅ Will Publish Immediately
+                    Will Publish Immediately
                   </span>
                 ) : (
                   <span className="text-slate-600 dark:text-slate-400 font-semibold">
-                    📝 Draft
+                    Draft
                   </span>
                 )}
               </div>
@@ -680,11 +752,11 @@ export default function NewPostPage() {
             {loading ? (
               'Creating...'
             ) : formData.scheduledFor ? (
-              <>⏰ Schedule Post</>
+              <>Schedule Post</>
             ) : formData.status === 'PUBLISHED' ? (
-              <>🚀 Publish Now</>
+              <>Publish Now</>
             ) : (
-              <>📝 Save Draft</>
+              <>Save Draft</>
             )}
           </Button>
         </div>
@@ -692,3 +764,11 @@ export default function NewPostPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+

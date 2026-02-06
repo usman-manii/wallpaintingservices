@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
@@ -18,6 +20,9 @@ import { getRoleColor, getRoleName, USER_ROLES } from '@/lib/roles';
 import RolesList from '@/components/admin/RolesList';
 import EmailApprovalsList from '@/components/admin/EmailApprovalsList';
 import { fetchAPI } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-utils';
+import PasswordRules from '@/components/auth/PasswordRules';
+import { getPasswordValidationMessage } from '@/lib/passwordRules';
 
 interface User {
   id: string;
@@ -26,12 +31,71 @@ interface User {
   firstName: string;
   lastName: string;
   displayName: string;
+  displayNameFormatted?: string;
   role: string;
   createdAt: string;
   postsCount?: number;
   phoneNumber?: string;
   countryCode?: string;
 }
+
+type NewUserForm = {
+  email: string;
+  name: string;
+  password: string;
+  role: string;
+};
+
+const DEFAULT_NEW_USER: NewUserForm = {
+  email: '',
+  name: '',
+  password: '',
+  role: 'SUBSCRIBER',
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseNumber = (value: unknown): number | undefined => (
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined
+);
+
+const parseUser = (value: unknown): User | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  const email = parseString(value.email);
+  const username = parseString(value.username);
+  const role = parseString(value.role);
+  const createdAt = parseString(value.createdAt);
+  if (!id || !email || !username || !role || !createdAt) {
+    return null;
+  }
+  return {
+    id,
+    email,
+    username,
+    firstName: parseString(value.firstName),
+    lastName: parseString(value.lastName),
+    displayName: parseString(value.displayName),
+    displayNameFormatted: parseString(value.displayNameFormatted) || undefined,
+    role,
+    createdAt,
+    postsCount: parseNumber(value.postsCount),
+    phoneNumber: parseString(value.phoneNumber) || undefined,
+    countryCode: parseString(value.countryCode) || undefined,
+  };
+};
+
+const parseUserList = (value: unknown): User[] => (
+  Array.isArray(value) ? value.map(parseUser).filter((user): user is User => !!user) : []
+);
 
 export default function UsersPage() {
   const router = useRouter();
@@ -42,12 +106,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [newUser, setNewUser] = useState({ 
-    email: '', 
-    name: '', 
-    password: '', 
-    role: 'SUBSCRIBER' 
-  });
+  const [newUser, setNewUser] = useState<NewUserForm>(DEFAULT_NEW_USER);
   const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'approvals'>('users');
 
   useEffect(() => {
@@ -57,13 +116,14 @@ export default function UsersPage() {
   const fetchUsers = async () => {
     try {
       const data = await fetchAPI('/auth/users', { redirectOn401: false });
-      setUsers(Array.isArray(data) ? data : []);
+      setUsers(parseUserList(data));
       setError(null);
-    } catch (error: any) {
-      console.error('Error fetching users:', error);
+    } catch (error: unknown) {
+      logger.error('Error fetching users:', error);
       // Don't set error for 401 - let layout handle redirect
-      if (!error.message?.includes('Unauthorized')) {
-        setError(error.message || 'Failed to fetch users');
+      const errorMsg = getErrorMessage(error, 'Failed to fetch users');
+      if (!errorMsg.toLowerCase().includes('unauthorized')) {
+        setError(errorMsg);
       }
     } finally {
       setLoading(false);
@@ -72,14 +132,19 @@ export default function UsersPage() {
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    const passwordError = getPasswordValidationMessage(newUser.password);
+    if (passwordError) {
+      showError(passwordError);
+      return;
+    }
     try {
       await fetchAPI('/auth/register', { method: 'POST', body: JSON.stringify(newUser), redirectOn401: false });
-      setNewUser({ email: '', name: '', password: '', role: 'USER' });
+      setNewUser({ ...DEFAULT_NEW_USER, role: 'SUBSCRIBER' });
       setShowAddUser(false);
       fetchUsers();
-    } catch (error: any) {
-      console.error('Error adding user:', error);
-      showError(error.message || 'Failed to add user');
+    } catch (error: unknown) {
+      logger.error('Error adding user:', error);
+      showError(getErrorMessage(error, 'Failed to add user'));
     }
   };
 
@@ -108,17 +173,12 @@ export default function UsersPage() {
       </>,
       async () => {
         try {
-          try {
-            await fetchAPI(`/auth/users/${id}`, { method: 'DELETE', redirectOn401: false });
-            success(`User "${username}" deleted successfully`);
-            fetchUsers();
-          } catch (error: any) {
-            console.error('Error deleting user:', error);
-            showError(error.message || 'Failed to delete user');
-          }
-        } catch (error) {
-          console.error('Error deleting user:', error);
-          showError('An error occurred while deleting');
+          await fetchAPI(`/auth/users/${id}`, { method: 'DELETE', redirectOn401: false });
+          success(`User "${username}" deleted successfully`);
+          fetchUsers();
+        } catch (error: unknown) {
+          logger.error('Error deleting user:', error);
+          showError(getErrorMessage(error, 'Failed to delete user'));
         }
       },
       'DELETE'
@@ -233,9 +293,13 @@ export default function UsersPage() {
                   type="password"
                   value={newUser.password}
                   onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  placeholder="••••••••"
+                  placeholder="********"
+                  minLength={12}
                   required
                 />
+                <div className="mt-2">
+                  <PasswordRules password={newUser.password} />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">Role</label>
@@ -266,7 +330,7 @@ export default function UsersPage() {
       <div className="space-y-4">
         {users.length === 0 ? (
           <Card>
-            <CardContent className="p-6 text-center text-slate-600">
+            <CardContent className="p-6 text-center text-muted-foreground">
               No users found. Click "Add User" to create one.
             </CardContent>
           </Card>
@@ -278,14 +342,14 @@ export default function UsersPage() {
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
                     <span className="text-blue-600 font-semibold text-lg">
-                      {(user.displayName || user.firstName || user.username).charAt(0).toUpperCase()}
+                      {(user.displayNameFormatted || user.displayName || user.firstName || user.username).charAt(0).toUpperCase()}
                     </span>
                   </div>
                   <div>
-                    <h3 className="font-semibold text-slate-900">
-                      {user.displayName || `${user.firstName} ${user.lastName}`.trim() || user.username}
+                    <h3 className="font-semibold text-foreground">
+                      {user.displayNameFormatted || user.displayName || `${user.firstName} ${user.lastName}`.trim() || user.username}
                     </h3>
-                    <div className="flex items-center gap-3 text-sm text-slate-600">
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Mail size={14} />
                         {user.email}
@@ -345,3 +409,5 @@ export default function UsersPage() {
     </div>
   );
 }
+
+

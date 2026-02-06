@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as dotenv from 'dotenv';
@@ -49,29 +49,29 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleInit() {
-    this.logger.log('🔌 Connecting to database with optimized connection pool...');
+    this.logger.log('Connecting to database with optimized connection pool...');
     
     // Set up Prisma event listeners for monitoring
-    this.$on('warn' as any, (e: any) => {
+    this.$on('warn', (e: Prisma.LogEvent) => {
       this.logger.warn(`Prisma Warning: ${e.message}`);
     });
 
-    this.$on('error' as any, (e: any) => {
+    this.$on('error', (e: Prisma.LogEvent) => {
       this.logger.error(`Prisma Error: ${e.message}`);
     });
 
     // Log slow queries in development (queries taking > 2s)
     if (process.env.NODE_ENV !== 'production') {
-      this.$on('query' as any, (e: any) => {
+      this.$on('query', (e: Prisma.QueryEvent) => {
         if (e.duration > 2000) {
-          this.logger.warn(`🐌 Slow Query (${e.duration}ms): ${e.query}`);
+          this.logger.warn(`Slow Query (${e.duration}ms): ${e.query}`);
         }
       });
     }
 
     // Pool event monitoring
-    this.pool.on('error', (err) => {
-      this.logger.error('Unexpected pool error:', err);
+    this.pool.on('error', (err: Error) => {
+      this.logger.error(`Unexpected pool error: ${err.message}`, err.stack);
     });
 
     this.pool.on('connect', () => {
@@ -83,19 +83,21 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     });
 
     try {
-        await this.$connect();
-        this.logger.log(`✅ Connected to database successfully (Pool: ${this.pool.totalCount} connections)`);
-    } catch(e) {
-        this.logger.error('❌ Failed to connect to database', e);
-        throw e;
+      await this.$connect();
+      this.logger.log(`Connected to database successfully (Pool: ${this.pool.totalCount} connections)`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Failed to connect to database: ${message}`, stack);
+      throw error;
     }
   }
 
   async onModuleDestroy() {
-    this.logger.log('📤 Disconnecting from database...');
+    this.logger.log('Disconnecting from database...');
     await this.$disconnect();
     await this.pool.end();
-    this.logger.log('✅ Database connections closed');
+    this.logger.log('Database connections closed');
   }
 
   /**
@@ -116,8 +118,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     try {
       await this.$queryRaw`SELECT 1`;
       return true;
-    } catch (error) {
-      this.logger.error('Database health check failed', error);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Database health check failed: ${message}`, stack);
       return false;
     }
   }

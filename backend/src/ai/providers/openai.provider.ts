@@ -3,6 +3,23 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AiProvider, GeneratedPostContent, SeoOptimizationResult } from '../interfaces/ai-provider.interface';
 
+type BlogGenerationOptions = {
+  minWords?: number;
+  maxWords?: number;
+  tone?: string;
+  keywords?: string[];
+};
+
+type BlogGenerationResult = {
+  title: string;
+  content: string;
+  excerpt: string;
+  metaDescription: string;
+  seoTitle: string;
+  keywords: string[];
+  tags: string[];
+};
+
 @Injectable()
 export class OpenAiProvider implements AiProvider {
   private readonly logger = new Logger(OpenAiProvider.name);
@@ -13,7 +30,7 @@ export class OpenAiProvider implements AiProvider {
   }
 
   async generatePost(topic: string): Promise<GeneratedPostContent> {
-    this.logger.log(`🤖 Calling OpenAI for topic: ${topic}`);
+    this.logger.log(`[OPENAI] Calling OpenAI for topic: ${topic}`);
 
     if (this.apiKey && this.apiKey !== 'mock') {
         try {
@@ -152,8 +169,8 @@ export class OpenAiProvider implements AiProvider {
   /**
    * Generate comprehensive blog post with specific requirements
    */
-  async generateBlogPost(prompt: string, options: any): Promise<any> {
-    this.logger.log(`📝 Generating blog post with ${options.minWords}-${options.maxWords} words`);
+  async generateBlogPost(prompt: string, options: BlogGenerationOptions): Promise<BlogGenerationResult> {
+    this.logger.log(`[OPENAI] Generating blog post with ${options.minWords}-${options.maxWords} words`);
 
     if (this.apiKey && this.apiKey !== 'mock') {
       try {
@@ -186,7 +203,7 @@ export class OpenAiProvider implements AiProvider {
     return this.generateEnhancedMockBlog(options);
   }
 
-  private generateEnhancedMockBlog(options: any): any {
+  private generateEnhancedMockBlog(options: BlogGenerationOptions): BlogGenerationResult {
     const keywords = options.keywords || ['painting', 'wall services', 'UAE'];
     const primaryKeyword = keywords[0];
     const year = new Date().getFullYear();
@@ -201,19 +218,19 @@ export class OpenAiProvider implements AiProvider {
       },
       {
         heading: `Why Choose Professional ${primaryKeyword} Services`,
-        content: `Professional ${primaryKeyword} services offer numerous advantages over DIY approaches. Expert technicians bring years of experience, specialized equipment, and industry knowledge that ensures superior results. When you invest in professional services, you're not just paying for labor – you're investing in quality, durability, and peace of mind. Professional providers understand the latest techniques, materials, and safety standards, ensuring your project meets or exceeds industry benchmarks. Additionally, professional services often come with warranties and guarantees, protecting your investment for years to come.`
+        content: `Professional ${primaryKeyword} services offer numerous advantages over DIY approaches. Expert technicians bring years of experience, specialized equipment, and industry knowledge that ensures superior results. When you invest in professional services, you're not just paying for labor  you're investing in quality, durability, and peace of mind. Professional providers understand the latest techniques, materials, and safety standards, ensuring your project meets or exceeds industry benchmarks. Additionally, professional services often come with warranties and guarantees, protecting your investment for years to come.`
       },
       {
         heading: 'Key Benefits and Advantages',
-        content: `The benefits of professional ${primaryKeyword} extend far beyond the obvious aesthetic improvements. First and foremost, you gain access to expert knowledge and proven methodologies that have been refined over countless projects. Professional providers use premium materials that offer superior durability, weather resistance, and longevity compared to standard options. Time efficiency is another crucial advantage – what might take weeks for a DIY enthusiast can be completed in days by experienced professionals. Cost-effectiveness comes into play when you consider the reduced risk of errors, material waste, and the need for future repairs. Safety is paramount, especially for complex projects involving heights, chemicals, or specialized equipment. Professional teams are trained in safety protocols and carry appropriate insurance coverage.`
+        content: `The benefits of professional ${primaryKeyword} extend far beyond the obvious aesthetic improvements. First and foremost, you gain access to expert knowledge and proven methodologies that have been refined over countless projects. Professional providers use premium materials that offer superior durability, weather resistance, and longevity compared to standard options. Time efficiency is another crucial advantage  what might take weeks for a DIY enthusiast can be completed in days by experienced professionals. Cost-effectiveness comes into play when you consider the reduced risk of errors, material waste, and the need for future repairs. Safety is paramount, especially for complex projects involving heights, chemicals, or specialized equipment. Professional teams are trained in safety protocols and carry appropriate insurance coverage.`
       },
       {
         heading: 'Understanding the Process',
-        content: `A successful ${primaryKeyword} project follows a systematic process that begins with thorough consultation and assessment. During the initial phase, professionals evaluate your specific needs, space characteristics, and any existing challenges that need addressing. This is followed by detailed planning where color schemes, materials, timelines, and budgets are established. Preparation is often the most critical phase – surfaces must be properly cleaned, repaired, and primed to ensure optimal adhesion and longevity. The application phase involves precise techniques that vary depending on the specific requirements of your project. Multiple coats may be necessary, with adequate drying time between applications. Quality control checks are performed throughout the process to maintain consistent standards. The final phase includes cleanup, inspection, and providing you with maintenance guidelines to preserve the results.`
+        content: `A successful ${primaryKeyword} project follows a systematic process that begins with thorough consultation and assessment. During the initial phase, professionals evaluate your specific needs, space characteristics, and existing challenges that need addressing. This is followed by detailed planning where color schemes, materials, timelines, and budgets are established. Preparation is often the most critical phase  surfaces must be properly cleaned, repaired, and primed to ensure optimal adhesion and longevity. The application phase involves precise techniques that vary depending on the specific requirements of your project. Multiple coats may be necessary, with adequate drying time between applications. Quality control checks are performed throughout the process to maintain consistent standards. The final phase includes cleanup, inspection, and providing you with maintenance guidelines to preserve the results.`
       },
       {
         heading: 'Material Selection and Quality',
-        content: `Choosing the right materials is fundamental to project success in ${primaryKeyword}. Premium materials offer superior coverage, durability, and resistance to environmental factors such as UV radiation, moisture, and temperature fluctuations. Different spaces require different material specifications – what works well for interior applications may not be suitable for exterior use. Consider factors like finish type (matte, satin, semi-gloss, or high-gloss), each offering distinct aesthetic and practical characteristics. Eco-friendly options have become increasingly popular, offering low-VOC formulations that minimize environmental impact and indoor air quality concerns. Professional providers stay updated on the latest material innovations and can recommend options that best suit your specific requirements and budget constraints.`
+        content: `Choosing the right materials is fundamental to project success in ${primaryKeyword}. Premium materials offer superior coverage, durability, and resistance to environmental factors such as UV radiation, moisture, and temperature fluctuations. Different spaces require different material specifications  what works well for interior applications may not be suitable for exterior use. Consider factors like finish type (matte, satin, semi-gloss, or high-gloss), each offering distinct aesthetic and practical characteristics. Eco-friendly options have become increasingly popular, offering low-VOC formulations that minimize environmental impact and indoor air quality concerns. Professional providers stay updated on the latest material innovations and can recommend options that best suit your specific requirements and budget constraints.`
       },
       {
         heading: 'Cost Considerations and Budgeting',
@@ -221,19 +238,19 @@ export class OpenAiProvider implements AiProvider {
       },
       {
         heading: 'Timeline and Project Planning',
-        content: `Proper timeline planning ensures your ${primaryKeyword} project proceeds smoothly without unexpected delays or disruptions. Most projects require advance scheduling, especially during peak seasons when professional providers may have limited availability. The duration of your project depends on multiple factors including size, complexity, weather conditions (for exterior work), and drying times between coats. A typical residential project might span several days to a couple of weeks, while commercial projects can extend significantly longer. Communicate clearly with your provider about any time-sensitive deadlines or constraints. Factors that can affect timelines include weather delays (for exterior work), discovery of unexpected issues requiring repair, material availability, and curing times for specialized finishes. Professional providers should provide realistic timelines with built-in buffers for unexpected circumstances.`
+        content: `Proper timeline planning ensures your ${primaryKeyword} project proceeds smoothly without unexpected delays or disruptions. Most projects require advance scheduling, especially during peak seasons when professional providers may have limited availability. The duration of your project depends on multiple factors including size, complexity, weather conditions (for exterior work), and drying times between coats. A typical residential project might span several days to a couple of weeks, while commercial projects can extend significantly longer. Communicate clearly with your provider about time-sensitive deadlines or constraints. Factors that can affect timelines include weather delays (for exterior work), discovery of unexpected issues requiring repair, material availability, and curing times for specialized finishes. Professional providers should provide realistic timelines with built-in buffers for unexpected circumstances.`
       },
       {
         heading: 'Maintenance and Longevity',
-        content: `Proper maintenance significantly extends the life and appearance of your ${primaryKeyword} investment. Regular cleaning with appropriate methods prevents buildup of dirt, grime, and other contaminants that can degrade surfaces over time. Inspect periodically for signs of wear, damage, or deterioration, addressing any issues promptly to prevent more extensive problems. Touch-ups may be necessary in high-traffic areas or places subject to wear and tear. Environmental factors play a significant role – exterior surfaces face challenges from sun exposure, weather, and temperature fluctuations. Understanding the expected lifespan of different materials and finishes helps you plan for future maintenance or replacement. Professional providers often offer maintenance services and can create customized maintenance schedules based on your specific situation. Documentation of original work, including materials used and application techniques, facilitates future maintenance and repairs.`
+        content: `Proper maintenance significantly extends the life and appearance of your ${primaryKeyword} investment. Regular cleaning with appropriate methods prevents buildup of dirt, grime, and other contaminants that can degrade surfaces over time. Inspect periodically for signs of wear, damage, or deterioration, addressing issues promptly to prevent more extensive problems. Touch-ups may be necessary in high-traffic areas or places subject to wear and tear. Environmental factors play a significant role  exterior surfaces face challenges from sun exposure, weather, and temperature fluctuations. Understanding the expected lifespan of different materials and finishes helps you plan for future maintenance or replacement. Professional providers often offer maintenance services and can create customized maintenance schedules based on your specific situation. Documentation of original work, including materials used and application techniques, facilitates future maintenance and repairs.`
       },
       {
         heading: 'Choosing the Right Provider',
-        content: `Selecting the right professional for your ${primaryKeyword} project is crucial to achieving desired results. Start by verifying credentials, licenses, and insurance coverage to ensure you're working with legitimate, qualified professionals. Experience matters – look for providers with proven track records in projects similar to yours. Review portfolios and previous work examples to assess quality and style alignment. Customer testimonials and reviews provide valuable insights into reliability, professionalism, and customer satisfaction. Obtain multiple detailed quotes for comparison, but don't base decisions solely on price. Communication style and responsiveness during initial interactions often reflect how they'll handle your project. Ask about warranties, guarantees, and post-project support. Understand their process, timeline commitments, and how they handle unexpected issues or changes. Reputable providers are transparent, professional, and willing to answer all your questions thoroughly.`
+        content: `Selecting the right professional for your ${primaryKeyword} project is crucial to achieving desired results. Start by verifying credentials, licenses, and insurance coverage to ensure you're working with legitimate, qualified professionals. Experience matters  look for providers with proven track records in projects similar to yours. Review portfolios and previous work examples to assess quality and style alignment. Customer testimonials and reviews provide valuable insights into reliability, professionalism, and customer satisfaction. Obtain multiple detailed quotes for comparison, but don't base decisions solely on price. Communication style and responsiveness during initial interactions often reflect how they'll handle your project. Ask about warranties, guarantees, and post-project support. Understand their process, timeline commitments, and how they handle unexpected issues or changes. Reputable providers are transparent, professional, and willing to answer all your questions thoroughly.`
       },
       {
         heading: 'Conclusion and Next Steps',
-        content: `Professional ${primaryKeyword} services represent an investment in your property's appearance, value, and longevity. By understanding the key factors we've discussed – from process and materials to costs and maintenance – you're well-equipped to make informed decisions for your project. Take time to research providers, ask questions, and verify credentials before committing. Remember that the lowest price rarely delivers the best value; focus instead on quality, experience, and reputation. Whether you're planning a residential refresh or a large commercial project, professional ${primaryKeyword} services deliver results that stand the test of time. Ready to get started? Contact reputable local providers for consultations and quotes, and take the first step toward transforming your space with professional expertise.`
+        content: `Professional ${primaryKeyword} services represent an investment in your property's appearance, value, and longevity. By understanding the key factors we've discussed  from process and materials to costs and maintenance  you're well-equipped to make informed decisions for your project. Take time to research providers, ask questions, and verify credentials before committing. Remember that the lowest price rarely delivers the best value; focus instead on quality, experience, and reputation. Whether you're planning a residential refresh or a large commercial project, professional ${primaryKeyword} services deliver results that stand the test of time. Ready to get started? Contact reputable local providers for consultations and quotes, and take the first step toward transforming your space with professional expertise.`
       }
     ];
 
@@ -262,3 +279,5 @@ export class OpenAiProvider implements AiProvider {
     };
   }
 }
+
+

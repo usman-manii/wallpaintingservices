@@ -4,10 +4,27 @@ import { useState, useEffect, useRef } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import { ThumbsUp, ThumbsDown, Flag, CornerDownRight } from 'lucide-react';
+import logger from '@/lib/logger';
+import { getErrorMessage } from '@/lib/error-utils';
+
+type CommentUser = {
+  displayName?: string;
+};
+
+type Comment = {
+  id: string;
+  authorName?: string;
+  user?: CommentUser | null;
+  createdAt?: string;
+  content?: string;
+  upvotes?: number;
+  downvotes?: number;
+  replies?: Comment[];
+};
 
 export default function CommentSection({ postId }: { postId: string }) {
   const { error: showError } = useToast();
-  const [comments, setComments] = useState<any[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [form, setForm] = useState({ name: '', email: '', content: '', parentId: '' });
   const [loading, setLoading] = useState(false);
   const errorShownRef = useRef<string | null>(null);
@@ -16,20 +33,19 @@ export default function CommentSection({ postId }: { postId: string }) {
 
   useEffect(() => {
     loadComments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
 
   async function loadComments() {
     try {
       errorShownRef.current = null; // Reset error tracking on new load
-      const data = await fetchAPI(`/comments/post/${postId}`);
+      const data = await fetchAPI<Comment[]>(`/comments/post/${postId}`);
       setComments(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      const errorMsg = e?.message || "Failed to load comments";
+    } catch (e: unknown) {
+      const errorMsg = getErrorMessage(e, 'Failed to load comments');
       // Only show error once per unique error message
       if (errorShownRef.current !== errorMsg) {
         errorShownRef.current = errorMsg;
-        console.error("Failed to load comments:", e);
+        logger.error('Failed to load comments', e, { component: 'CommentSection', postId });
         showError(errorMsg);
       }
     }
@@ -48,8 +64,8 @@ export default function CommentSection({ postId }: { postId: string }) {
       setReplyTo(null);
       errorShownRef.current = null; // Reset on success
       loadComments();
-    } catch (e: any) {
-      const errorMsg = e?.message || "Failed to post comment";
+    } catch (e: unknown) {
+      const errorMsg = getErrorMessage(e, 'Failed to post comment');
       // Only show error once per submit attempt
       if (errorShownRef.current !== errorMsg) {
         errorShownRef.current = errorMsg;
@@ -69,8 +85,8 @@ export default function CommentSection({ postId }: { postId: string }) {
         body: JSON.stringify(type === 'up' ? { up: true } : { down: true }),
       });
       loadComments();
-    } catch (e: any) {
-      showError(e?.message || 'Failed to vote');
+    } catch (e: unknown) {
+      showError(getErrorMessage(e, 'Failed to vote'));
     } finally {
       setBusyId(null);
     }
@@ -85,20 +101,20 @@ export default function CommentSection({ postId }: { postId: string }) {
         body: JSON.stringify({ reason: 'User flag' }),
       });
       showError('Comment flagged for review');
-    } catch (e: any) {
-      showError(e?.message || 'Failed to flag');
+    } catch (e: unknown) {
+      showError(getErrorMessage(e, 'Failed to flag'));
     } finally {
       setBusyId(null);
     }
   };
 
-  const renderComment = (comment: any, depth = 0) => (
+  const renderComment = (comment: Comment, depth = 0) => (
     <div key={comment.id} className={`bg-muted/60 p-4 rounded-lg mb-3 ${depth > 0 ? 'ml-6 border-l-2 border-slate-200 dark:border-slate-700' : ''}`}>
       <div className="flex justify-between mb-2">
         <div className="font-semibold">{comment.authorName || comment.user?.displayName || 'Anonymous'}</div>
-        <div className="text-muted-foreground text-sm">{new Date(comment.createdAt).toLocaleDateString()}</div>
+        <div className="text-muted-foreground text-sm">{comment.createdAt ? new Date(comment.createdAt).toLocaleDateString() : ''}</div>
       </div>
-      <p className="text-foreground mb-3 whitespace-pre-wrap">{comment.content}</p>
+      <p className="text-foreground mb-3 whitespace-pre-wrap">{comment.content || ''}</p>
       <div className="flex items-center gap-3 text-sm text-slate-500">
         <button
           disabled={busyId === comment.id}
@@ -131,7 +147,7 @@ export default function CommentSection({ postId }: { postId: string }) {
       </div>
       {comment.replies && comment.replies.length > 0 && (
         <div className="mt-3">
-          {comment.replies.map((reply: any) => renderComment(reply, depth + 1))}
+          {comment.replies.map((reply) => renderComment(reply, depth + 1))}
         </div>
       )}
     </div>
@@ -183,3 +199,5 @@ export default function CommentSection({ postId }: { postId: string }) {
     </div>
   );
 }
+
+

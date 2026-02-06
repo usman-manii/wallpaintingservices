@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsBoolean, IsObject, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsObject, IsArray, IsInt, Min, Max } from 'class-validator';
+import { JsonValue } from '../../common/types/json';
 
 export class UpdateSettingsDto {
   @IsOptional()
@@ -47,27 +48,27 @@ export class UpdateSettingsDto {
 
   @IsOptional()
   @IsObject()
-  contactInfo?: any;
+  contactInfo?: Record<string, JsonValue>;
 
   @IsOptional()
   @IsObject()
-  menuStructure?: any;
+  menuStructure?: Record<string, JsonValue>;
 
   @IsOptional()
   @IsObject()
-  widgetConfig?: any;
+  widgetConfig?: Record<string, JsonValue>;
 
   @IsOptional()
   @IsObject()
-  appearanceSettings?: any;
+  appearanceSettings?: Record<string, JsonValue>;
 
   @IsOptional()
   @IsObject()
-  socialLinks?: any;
+  socialLinks?: Record<string, JsonValue>;
 
   @IsOptional()
-  @IsObject()
-  aiConfig?: any;
+  @IsArray()
+  aiConfig?: JsonValue[];
 
   @IsOptional()
   @IsArray()
@@ -130,4 +131,34 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsString()
   customVerificationTag?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  cookieConsentEnabled?: boolean;
+
+  @IsOptional()
+  @IsObject()
+  cookieConsentConfig?: Record<string, JsonValue>;
+
+  @IsOptional()
+  @IsObject()
+  notificationConfig?: Record<string, JsonValue>;
+
+  @IsOptional()
+  @IsObject()
+  sitemapConfig?: Record<string, JsonValue>;
+
+  @IsOptional()
+  @IsString()
+  aiMode?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(7)
+  aiLearningLevel?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  aiSelfLearningEnabled?: boolean;
 }

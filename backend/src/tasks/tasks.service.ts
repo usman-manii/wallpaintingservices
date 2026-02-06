@@ -7,6 +7,54 @@ import { CommentModerationService } from '../comment/comment-moderation.service'
 import { AiService } from '../ai/ai.service';
 import { SocialService } from '../social/social.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { JsonValue } from '../common/types/json';
+
+type AiMetadata = Record<string, JsonValue>;
+
+type SocialChannel = {
+  id: string;
+  name?: string;
+  enabled?: boolean;
+  autoPublish?: boolean;
+  renewInterval?: number;
+};
+
+const getErrorMessage = (error: unknown): string => (
+  error instanceof Error ? error.message : String(error)
+);
+
+const getErrorStack = (error: unknown): string | undefined => (
+  error instanceof Error ? error.stack : undefined
+);
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseAiMetadata = (value: unknown): AiMetadata => (
+  isRecord(value) ? (value as AiMetadata) : {}
+);
+
+const parseSocialLinks = (value: unknown): SocialChannel[] => (
+  Array.isArray(value)
+    ? value.filter(isRecord).map((channel) => ({
+        id: String(channel.id ?? ''),
+        name: typeof channel.name === 'string' ? channel.name : undefined,
+        enabled: typeof channel.enabled === 'boolean' ? channel.enabled : undefined,
+        autoPublish: typeof channel.autoPublish === 'boolean' ? channel.autoPublish : undefined,
+        renewInterval: typeof channel.renewInterval === 'number' ? channel.renewInterval : undefined,
+      })).filter((channel) => channel.id.length > 0)
+    : []
+);
+
+const parseDateValue = (value: JsonValue | undefined): Date | null => {
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+};
 
 @Injectable()
 export class TasksService {
@@ -29,17 +77,20 @@ export class TasksService {
   @Cron(CronExpression.EVERY_5_MINUTES)
   async handleScheduledPosts() {
     this.logger.log('[BLOG] Running scheduled post publishing job...');
-    
+
     try {
       const publishedCount = await this.enhancedBlogService.processScheduledPosts();
-      
+
       if (publishedCount > 0) {
-        this.logger.log(`✅ [BLOG] Published ${publishedCount} scheduled post(s)`);
+        this.logger.log(`[OK] [BLOG] Published ${publishedCount} scheduled post(s)`);
       } else {
         this.logger.debug('[BLOG] No scheduled posts ready to publish');
       }
     } catch (error) {
-      this.logger.error('[BLOG] Error processing scheduled posts:', error);
+      this.logger.error(
+        `[BLOG] Error processing scheduled posts: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 
@@ -50,12 +101,15 @@ export class TasksService {
   @Cron('0 3 * * *')
   async handleTrendingTags() {
     this.logger.log('[BLOG] Running trending tags update job...');
-    
+
     try {
       const trendingCount = await this.enhancedBlogService.updateTrendingTags();
-      this.logger.log(`✅ [BLOG] Updated ${trendingCount} trending tags`);
+      this.logger.log(`[OK] [BLOG] Updated ${trendingCount} trending tags`);
     } catch (error) {
-      this.logger.error('[BLOG] Error updating trending tags:', error);
+      this.logger.error(
+        `[BLOG] Error updating trending tags: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 
@@ -66,16 +120,19 @@ export class TasksService {
   @Cron('0 2 * * *')
   async handleDatabaseCleanup() {
     this.logger.log('[DATABASE] Running database cleanup job...');
-    
+
     try {
       // Delete spam comments older than 90 days
       const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-      
+
       const result = await this.commentModerationService.deleteOldSpam(ninetyDaysAgo);
-      
-      this.logger.log(`✅ [DATABASE] Cleaned up ${result.count} old spam comments`);
+
+      this.logger.log(`[OK] [DATABASE] Cleaned up ${result.count} old spam comments`);
     } catch (error) {
-      this.logger.error('[DATABASE] Error during database cleanup:', error);
+      this.logger.error(
+        `[DATABASE] Error during database cleanup: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 
@@ -86,14 +143,17 @@ export class TasksService {
   @Cron('0 4 * * *')
   async handleSitemapGeneration() {
     this.logger.log('[SEO] Running sitemap generation job...');
-    
+
     try {
       await this.sitemapService.generateSitemap();
       const stats = await this.sitemapService.getSitemapStats();
-      
-      this.logger.log(`✅ [SEO] Sitemap generated: ${stats.totalUrls} URLs (${stats.blogPosts} posts, ${stats.categories} categories, ${stats.tags} tags)`);
+
+      this.logger.log(`[OK] [SEO] Sitemap generated: ${stats.totalUrls} URLs (${stats.blogPosts} posts, ${stats.categories} categories, ${stats.tags} tags)`);
     } catch (error) {
-      this.logger.error('[SEO] Error generating sitemap:', error);
+      this.logger.error(
+        `[SEO] Error generating sitemap: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 
@@ -105,39 +165,42 @@ export class TasksService {
   @Cron('0 1 * * 0')
   async handleContentAnalysis() {
     this.logger.log('[AI] Running content analysis job...');
-    
+
     try {
       // Find top 5 viewed posts from the last 30 days that haven't been optimized in 60 days
       const candidates = await this.prisma.post.findMany({
-         where: { status: 'PUBLISHED' },
-         orderBy: { viewCount: 'desc' },
-         take: 5
+        where: { status: 'PUBLISHED' },
+        orderBy: { viewCount: 'desc' },
+        take: 5
       });
 
       let analyzedCount = 0;
       for (const post of candidates) {
         // Skip if recently optimized (check not yet in schema, simpler fallback)
         const analysis = await this.aiService.optimizeSeo(post.content);
-        
+
         // Save analysis to AI Metadata
-        const currentMeta = (post.aiMetadata as any) || {};
+        const currentMeta = parseAiMetadata(post.aiMetadata);
         await this.prisma.post.update({
-            where: { id: post.id },
-            data: {
-                aiMetadata: {
-                    ...currentMeta,
-                    lastSeoAnalysis: new Date(),
-                    seoScore: analysis.score,
-                    seoSuggestions: analysis.suggestions
-                }
+          where: { id: post.id },
+          data: {
+            aiMetadata: {
+              ...currentMeta,
+              lastSeoAnalysis: new Date().toISOString(),
+              seoScore: analysis.score,
+              seoSuggestions: analysis.suggestions
             }
+          }
         });
         analyzedCount++;
       }
-      
-      this.logger.log(`✅ [AI] Analyzed ${analyzedCount} posts for content quality`);
+
+      this.logger.log(`[OK] [AI] Analyzed ${analyzedCount} posts for content quality`);
     } catch (error) {
-       this.logger.error('[AI] Content analysis failed', error);
+      this.logger.error(
+        `[AI] Content analysis failed: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 
@@ -148,85 +211,86 @@ export class TasksService {
   @Cron('0 * * * *')
   async handleSocialDistribution() {
     this.logger.log('[DISTRIBUTION] Checking for posts to distribute...');
-    
+
     try {
-        const settings = await this.prisma.siteSettings.findFirst();
-        const socialLinks = (settings?.socialLinks as any[]) || [];
-        
-        // Find channels with auto-publishing enabled
-        const autoChannels = socialLinks.filter(c => c.enabled && c.autoPublish);
-        if (autoChannels.length === 0) {
-            this.logger.debug('[DISTRIBUTION] No auto-publish channels configured.');
-            return;
+      const settings = await this.prisma.siteSettings.findFirst();
+      const socialLinks = parseSocialLinks(settings?.socialLinks);
+
+      // Find channels with auto-publishing enabled
+      const autoChannels = socialLinks.filter(channel => channel.enabled && channel.autoPublish);
+      if (autoChannels.length === 0) {
+        this.logger.debug('[DISTRIBUTION] No auto-publish channels configured.');
+        return;
+      }
+
+      // 1. Process NEW Posts (Published in last hour, never shared)
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const newPosts = await this.prisma.post.findMany({
+        where: {
+          status: 'PUBLISHED',
+          // In a real app, we would check "sharedAt" in metadata or another field.
+          publishedAt: { gte: oneHourAgo }
         }
+      });
 
-        // 1. Process NEW Posts (Published in last hour, never shared)
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-        const newPosts = await this.prisma.post.findMany({
-            where: {
-                status: 'PUBLISHED',
-                // complex metadata querying implies simpler logic here:
-                // We'll trust the socialService to handle idempotency or just grab "recent" 
-                // In a real app, we check "sharedAt"
-                publishedAt: { gte: oneHourAgo }
-            }
-        });
+      for (const post of newPosts) {
+        // Check if already shared (using metadata if available)
+        const meta = parseAiMetadata(post.aiMetadata);
+        if (!meta.socialSharedAt) {
+          await this.socialService.distributePost(post.id, autoChannels.map(channel => channel.id));
 
-        for (const post of newPosts) {
-            // Check if already shared (using metadata if available)
-            const meta = (post.aiMetadata as any) || {};
-            if (!meta.socialSharedAt) {
-                await this.socialService.distributePost(post.id, autoChannels.map(c => c.id));
-                
-                // Mark shared
-                await this.prisma.post.update({
-                    where: { id: post.id },
-                    data: {
-                        aiMetadata: {
-                            ...meta,
-                            socialSharedAt: new Date()
-                        }
-                    }
-                });
+          // Mark shared
+          await this.prisma.post.update({
+            where: { id: post.id },
+            data: {
+              aiMetadata: {
+                ...meta,
+                socialSharedAt: new Date().toISOString()
+              }
             }
+          });
         }
+      }
 
-        // 2. Process RENEWABLE Posts
-        for (const channel of autoChannels) {
-            if (channel.renewInterval > 0) {
-                const daysAgo = new Date(Date.now() - channel.renewInterval * 24 * 60 * 60 * 1000);
-                // Check older posts
-                const candidates = await this.prisma.post.findMany({
-                    where: { status: 'PUBLISHED', publishedAt: { lte: daysAgo } },
-                    take: 5,
-                    orderBy: { updatedAt: 'asc' }
-                });
+      // 2. Process RENEWABLE Posts
+      for (const channel of autoChannels) {
+        if (typeof channel.renewInterval === 'number' && channel.renewInterval > 0) {
+          const daysAgo = new Date(Date.now() - channel.renewInterval * 24 * 60 * 60 * 1000);
+          // Check older posts
+          const candidates = await this.prisma.post.findMany({
+            where: { status: 'PUBLISHED', publishedAt: { lte: daysAgo } },
+            take: 5,
+            orderBy: { updatedAt: 'asc' }
+          });
 
-                for (const post of candidates) {
-                    const meta = (post.aiMetadata as any) || {};
-                    const lastShared = meta.socialSharedAt ? new Date(meta.socialSharedAt) : null;
-                    if (!lastShared || lastShared <= daysAgo) {
-                         this.logger.log(`♻️ Renewing post "${post.title}" for ${channel.name}`);
-                         await this.socialService.distributePost(post.id, [channel.id]);
-                         await this.prisma.post.update({
-                            where: { id: post.id },
-                            data: {
-                                aiMetadata: { ...meta, socialSharedAt: new Date() },
-                                updatedAt: new Date() 
-                            }
-                        });
-                        break; // Limit 1 per channel
-                    }
+          for (const post of candidates) {
+            const meta = parseAiMetadata(post.aiMetadata);
+            const lastShared = parseDateValue(meta.socialSharedAt);
+            if (!lastShared || lastShared <= daysAgo) {
+              this.logger.log(`[RENEW] Renewing post "${post.title}" for ${channel.name ?? channel.id}`);
+              await this.socialService.distributePost(post.id, [channel.id]);
+              await this.prisma.post.update({
+                where: { id: post.id },
+                data: {
+                  aiMetadata: { ...meta, socialSharedAt: new Date().toISOString() },
+                  updatedAt: new Date()
                 }
+              });
+              break; // Limit 1 per channel
             }
+          }
         }
-        
-        if (newPosts.length > 0) {
-            this.logger.log(`✅ [DISTRIBUTION] Distributed ${newPosts.length} new posts.`);
-        }
-        
+      }
+
+      if (newPosts.length > 0) {
+        this.logger.log(`[OK] [DISTRIBUTION] Distributed ${newPosts.length} new posts.`);
+      }
+
     } catch (error) {
-        this.logger.error('[DISTRIBUTION] Distribution task failed', error);
+      this.logger.error(
+        `[DISTRIBUTION] Distribution task failed: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 
@@ -237,21 +301,29 @@ export class TasksService {
   @Cron('30 4 * * *')
   async handleSearchEnginePing() {
     this.logger.log('[SEO] Pinging search engines about sitemap update...');
-    
+
     try {
+      if (!process.env.FRONTEND_URL) {
+        this.logger.warn('[SEO] FRONTEND_URL not set. Skipping search engine ping.');
+        return;
+      }
+
       // Ping Google
-      const googlePingUrl = `http://www.google.com/ping?sitemap=${encodeURIComponent(process.env.FRONTEND_URL + '/sitemap.xml')}`;
-      
+      const googlePingUrl = `https://www.google.com/ping?sitemap=${encodeURIComponent(`${process.env.FRONTEND_URL}/sitemap.xml`)}`;
+
       // Ping Bing
-      const bingPingUrl = `http://www.bing.com/ping?sitemap=${encodeURIComponent(process.env.FRONTEND_URL + '/sitemap.xml')}`;
-      
+      const bingPingUrl = `https://www.bing.com/ping?sitemap=${encodeURIComponent(`${process.env.FRONTEND_URL}/sitemap.xml`)}`;
+
       // Note: In production, use fetch to actually ping
       // await fetch(googlePingUrl);
       // await fetch(bingPingUrl);
-      
-      this.logger.log('✅ [SEO] Search engines notified about sitemap update');
+
+      this.logger.log('[OK] [SEO] Search engines notified about sitemap update');
     } catch (error) {
-      this.logger.error('[SEO] Error pinging search engines:', error);
+      this.logger.error(
+        `[SEO] Error pinging search engines: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 
@@ -357,42 +429,42 @@ export class TasksService {
   private getNextCronRun(cronExpression: string): string {
     // Simplified calculation - in production use a library like cron-parser
     const now = new Date();
-    
+
     if (cronExpression === '*/5 * * * *') {
       const next = new Date(now);
       next.setMinutes(Math.ceil(now.getMinutes() / 5) * 5);
       next.setSeconds(0);
       return next.toISOString();
     }
-    
+
     if (cronExpression === '0 3 * * *') {
       const next = new Date(now);
       next.setHours(3, 0, 0, 0);
       if (next <= now) next.setDate(next.getDate() + 1);
       return next.toISOString();
     }
-    
+
     if (cronExpression === '0 2 * * *') {
       const next = new Date(now);
       next.setHours(2, 0, 0, 0);
       if (next <= now) next.setDate(next.getDate() + 1);
       return next.toISOString();
     }
-    
+
     if (cronExpression === '0 4 * * *') {
       const next = new Date(now);
       next.setHours(4, 0, 0, 0);
       if (next <= now) next.setDate(next.getDate() + 1);
       return next.toISOString();
     }
-    
+
     if (cronExpression === '30 4 * * *') {
       const next = new Date(now);
       next.setHours(4, 30, 0, 0);
       if (next <= now) next.setDate(next.getDate() + 1);
       return next.toISOString();
     }
-    
+
     if (cronExpression === '0 1 * * 0') {
       const next = new Date(now);
       next.setHours(1, 0, 0, 0);
@@ -400,14 +472,14 @@ export class TasksService {
       next.setDate(next.getDate() + daysUntilSunday);
       return next.toISOString();
     }
-    
+
     if (cronExpression === '0 * * * *') {
       const next = new Date(now);
       next.setMinutes(0, 0, 0);
       next.setHours(next.getHours() + 1);
       return next.toISOString();
     }
-    
+
     return new Date(now.getTime() + 3600000).toISOString(); // +1 hour fallback
   }
 
@@ -419,7 +491,7 @@ export class TasksService {
   @Cron('0 2 * * *')
   async handleAiBlogGeneration() {
     this.logger.log('[AI-BLOG] Running AI blog generation job...');
-    
+
     try {
       const settings = await this.prisma.siteSettings.findFirst();
       if (!settings?.aiEnabled) {
@@ -429,10 +501,13 @@ export class TasksService {
 
       const results = await this.aiBlogService.generateBlogBatch();
       const successCount = results.filter(r => r.success).length;
-      
-      this.logger.log(`✅ [AI-BLOG] Generated ${successCount}/${results.length} posts successfully`);
+
+      this.logger.log(`[OK] [AI-BLOG] Generated ${successCount}/${results.length} posts successfully`);
     } catch (error) {
-      this.logger.error('[AI-BLOG] Error during AI blog generation:', error);
+      this.logger.error(
+        `[AI-BLOG] Error during AI blog generation: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 
@@ -443,7 +518,7 @@ export class TasksService {
   @Cron('0 3 * * *')
   async handleAutoInterlinking() {
     this.logger.log('[AI-BLOG] Running auto-interlinking job...');
-    
+
     try {
       const settings = await this.prisma.siteSettings.findFirst();
       if (!settings?.autoInterlinkEnabled) {
@@ -452,9 +527,12 @@ export class TasksService {
       }
 
       const linksCreated = await this.aiBlogService.performAutoInterlinking();
-      this.logger.log(`✅ [AI-BLOG] Created ${linksCreated} internal links`);
+      this.logger.log(`[OK] [AI-BLOG] Created ${linksCreated} internal links`);
     } catch (error) {
-      this.logger.error('[AI-BLOG] Error during auto-interlinking:', error);
+      this.logger.error(
+        `[AI-BLOG] Error during auto-interlinking: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 
@@ -465,7 +543,7 @@ export class TasksService {
   @Cron('0 4 * * 0')
   async handleContentRefreshCheck() {
     this.logger.log('[AI-BLOG] Running content refresh check job...');
-    
+
     try {
       const settings = await this.prisma.siteSettings.findFirst();
       if (!settings?.contentRefreshEnabled) {
@@ -474,9 +552,12 @@ export class TasksService {
       }
 
       const count = await this.aiBlogService.identifyPostsNeedingRefresh();
-      this.logger.log(`✅ [AI-BLOG] Identified ${count} posts needing content refresh`);
+      this.logger.log(`[OK] [AI-BLOG] Identified ${count} posts needing content refresh`);
     } catch (error) {
-      this.logger.error('[AI-BLOG] Error checking content refresh:', error);
+      this.logger.error(
+        `[AI-BLOG] Error checking content refresh: ${getErrorMessage(error)}`,
+        getErrorStack(error),
+      );
     }
   }
 }

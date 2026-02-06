@@ -2,6 +2,60 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, PostStatus } from '@prisma/client';
+import { SanitizationUtil } from '../common/utils/sanitization.util';
+
+type UpdateEnhancedPostInput = Prisma.PostUpdateInput & {
+  tagIds?: string[];
+};
+
+type TagUpdatePayload = {
+  name?: string;
+  slug?: string;
+  description?: string | null;
+  color?: string | null;
+  icon?: string | null;
+  parentId?: string | null;
+  featured?: boolean;
+  synonyms?: string[];
+  linkedTagIds?: string[];
+  locked?: boolean;
+  forceUnlock?: boolean;
+};
+
+type TagSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  usageCount: number;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const extractTagIdsFromTagsInput = (value: unknown): string[] | undefined => {
+  if (!isRecord(value)) return undefined;
+
+  const setValue = value.set;
+  if (Array.isArray(setValue)) {
+    const ids = setValue
+      .filter(isRecord)
+      .map((item) => (typeof item.id === 'string' ? item.id : undefined))
+      .filter((id): id is string => Boolean(id));
+    return ids.length > 0 ? ids : undefined;
+  }
+
+  const connectValue = value.connect;
+  if (Array.isArray(connectValue)) {
+    const ids = connectValue
+      .filter(isRecord)
+      .map((item) => (typeof item.id === 'string' ? item.id : undefined))
+      .filter((id): id is string => Boolean(id));
+    return ids.length > 0 ? ids : undefined;
+  }
+
+  return undefined;
+};
 
 @Injectable()
 export class EnhancedBlogService {
@@ -279,22 +333,27 @@ export class EnhancedBlogService {
     scheduledFor?: Date;
     aiGenerated?: boolean;
   }) {
+    const sanitizedTitle = SanitizationUtil.sanitizeText(data.title);
+    const sanitizedContent = SanitizationUtil.sanitizeHTML(data.content);
+    const sanitizedExcerpt = data.excerpt ? SanitizationUtil.sanitizeText(data.excerpt) : undefined;
+    const sanitizedSlug = SanitizationUtil.sanitizeSlug(data.slug);
+
     // Generate auto-tags from content
-    const autoTagIds = await this.autoGenerateTags(data.content, data.title);
+    const autoTagIds = await this.autoGenerateTags(sanitizedContent, sanitizedTitle);
     
     // Merge manual tags with auto-generated ones
     let allTagIds = [...new Set([...(data.tagIds || []), ...autoTagIds])];
     allTagIds = await this.expandLinkedTags(allTagIds);
     
     // Calculate reading time
-    const readingTime = this.calculateReadingTime(data.content);
+    const readingTime = this.calculateReadingTime(sanitizedContent);
     
     // Generate SEO metadata
-    const seoData = await this.generateSEO(data.title, data.content);
+    const seoData = await this.generateSEO(sanitizedTitle, sanitizedContent);
     
     // Extract excerpt if not provided
-    const plainText = data.content.replace(/<[^>]*>/g, ' ').trim();
-    const excerpt = data.excerpt || plainText.substring(0, 160) + '...';
+    const plainText = sanitizedContent.replace(/<[^>]*>/g, ' ').trim();
+    const excerpt = sanitizedExcerpt || plainText.substring(0, 160) + '...';
     
     // Determine published date
     const now = new Date();
@@ -303,9 +362,9 @@ export class EnhancedBlogService {
     // Create post
     const post = await this.prisma.post.create({
       data: {
-        title: data.title,
-        slug: data.slug,
-        content: data.content,
+        title: sanitizedTitle,
+        slug: sanitizedSlug,
+        content: sanitizedContent,
         excerpt,
         featuredImage: data.featuredImage,
         status: data.status || PostStatus.DRAFT,
@@ -323,7 +382,7 @@ export class EnhancedBlogService {
     });
     
     // Generate interlinks (async, don't wait)
-    this.autoGenerateInterlinks(post.id, data.content, data.title);
+    this.autoGenerateInterlinks(post.id, sanitizedContent, sanitizedTitle);
     
     // Find and store related posts
     const relatedPostIds = await this.findRelatedPosts(post.id);
@@ -336,45 +395,62 @@ export class EnhancedBlogService {
   }
 
   // =========== UPDATE POST WITH AUTO-FEATURES ===========
-  async updateEnhancedPost(id: string, data: any) {
+  async updateEnhancedPost(id: string, data: UpdateEnhancedPostInput) {
     const existingPost = await this.prisma.post.findUnique({ where: { id }, include: { tags: true } });
     
     if (!existingPost) {
       throw new Error('Post not found');
     }
-    
+
+    const { tagIds, ...updateData } = data;
+    const hasContent = typeof updateData.content === 'string';
+    const hasTitle = typeof updateData.title === 'string';
+
     // If content or title changed, regenerate auto-features
-    if (data.content || data.title) {
-      const content = (data.content as string) || existingPost.content;
-      const title = (data.title as string) || existingPost.title;
-      
+    if (hasContent || hasTitle) {
+      const content = hasContent
+        ? SanitizationUtil.sanitizeHTML(updateData.content as string)
+        : existingPost.content;
+      const title = hasTitle
+        ? SanitizationUtil.sanitizeText(updateData.title as string)
+        : existingPost.title;
+
       // Regenerate auto-tags
       const autoTagIds = await this.autoGenerateTags(content, title);
-      
+
       // Recalculate reading time
       const readingTime = this.calculateReadingTime(content);
-      
+
       // Regenerate interlinks
       await this.autoGenerateInterlinks(id, content, title);
-      
+
       // Update related posts
       const relatedPostIds = await this.findRelatedPosts(id);
-      
-      let allTagIds = data.tagIds || existingPost.tags.map(t => t.id);
-      allTagIds = await this.expandLinkedTags(allTagIds);
 
-      data = {
-        ...data,
-        autoTags: autoTagIds,
-        readingTime,
-        relatedPostIds,
-        tags: allTagIds.length > 0 ? { set: allTagIds.map(id => ({ id })) } : undefined,
-      };
+      const manualTagIds = Array.isArray(tagIds)
+        ? tagIds
+        : extractTagIdsFromTagsInput(updateData.tags) ?? existingPost.tags.map(tag => tag.id);
+      let allTagIds = await this.expandLinkedTags(manualTagIds);
+
+      updateData.content = content;
+      updateData.title = title;
+      updateData.autoTags = autoTagIds;
+      updateData.readingTime = readingTime;
+      updateData.relatedPostIds = relatedPostIds;
+      updateData.tags = allTagIds.length > 0 ? { set: allTagIds.map(tagId => ({ id: tagId })) } : undefined;
     }
-    
+
+    if (typeof updateData.excerpt === 'string') {
+      updateData.excerpt = SanitizationUtil.sanitizeText(updateData.excerpt);
+    }
+
+    if (typeof updateData.slug === 'string') {
+      updateData.slug = SanitizationUtil.sanitizeSlug(updateData.slug);
+    }
+
     return this.prisma.post.update({
       where: { id },
-      data,
+      data: updateData,
       include: { tags: true, categories: true, author: true },
     });
   }
@@ -501,7 +577,7 @@ export class EnhancedBlogService {
   }
 
   /**
-   * Expand tag list with any linked companion tags
+   * Expand tag list with linked companion tags
    */
   private async expandLinkedTags(tagIds: string[]): Promise<string[]> {
     if (!tagIds || tagIds.length === 0) return [];
@@ -573,7 +649,7 @@ export class EnhancedBlogService {
    */
   async createTag(data: {
     name: string;
-    slug: string;
+    slug?: string;
     description?: string;
     color?: string;
     icon?: string;
@@ -622,8 +698,8 @@ export class EnhancedBlogService {
   /**
    * Update tag
    */
-  async updateTag(id: string, data: any) {
-    const updateData: any = { ...data };
+  async updateTag(id: string, data: TagUpdatePayload) {
+    const updateData: Prisma.TagUpdateInput = {};
 
     // Protect locked tags
     const existing = await this.prisma.tag.findUnique({ where: { id } });
@@ -633,10 +709,10 @@ export class EnhancedBlogService {
     if (existing.locked && !data.forceUnlock) {
       throw new Error('Tag is locked and cannot be modified');
     }
-    delete updateData.forceUnlock;
 
-    if (data.name) {
-      updateData.name = data.name.trim();
+    const nameValue = typeof data.name === 'string' ? data.name.trim() : undefined;
+    if (nameValue) {
+      updateData.name = nameValue;
     }
 
     if (Array.isArray(data.synonyms)) {
@@ -649,24 +725,58 @@ export class EnhancedBlogService {
       updateData.linkedTagIds = Array.from(new Set(data.linkedTagIds.filter((v: string) => !!v)));
     }
 
-    if (data.slug || data.name) {
-      updateData.slug = this.slugify(data.slug || data.name || '');
+    if (typeof data.description === 'string' || data.description === null) {
+      updateData.description = data.description;
+    }
+
+    if (typeof data.color === 'string' || data.color === null) {
+      updateData.color = data.color;
+    }
+
+    if (typeof data.icon === 'string' || data.icon === null) {
+      updateData.icon = data.icon;
+    }
+
+    if (typeof data.featured === 'boolean') {
+      updateData.featured = data.featured;
+    }
+
+    if (typeof data.locked === 'boolean') {
+      updateData.locked = data.locked;
+    }
+
+    const slugValue = data.slug || nameValue ? this.slugify(data.slug || nameValue || '') : undefined;
+    if (slugValue) {
+      updateData.slug = slugValue;
     }
 
     // Prevent self-parenting
-    if (data.parentId && data.parentId === id) {
-      throw new Error('A tag cannot be its own parent');
+    if (data.parentId !== undefined) {
+      if (data.parentId === id) {
+        throw new Error('A tag cannot be its own parent');
+      }
+      if (data.parentId && await this.wouldCreateTagCycle(id, data.parentId)) {
+        throw new Error('Tag hierarchy cycle detected');
+      }
+      updateData.parent = data.parentId
+        ? { connect: { id: data.parentId } }
+        : { disconnect: true };
     }
 
     // Prevent duplicates when changing name/slug
-    if (updateData.slug || updateData.name) {
+    if (slugValue || nameValue) {
+      const orConditions: Prisma.TagWhereInput[] = [];
+      if (slugValue) {
+        orConditions.push({ slug: slugValue });
+      }
+      if (nameValue) {
+        orConditions.push({ name: { equals: nameValue, mode: 'insensitive' } });
+      }
+
       const existing = await this.prisma.tag.findFirst({
         where: {
           id: { not: id },
-          OR: [
-            updateData.slug ? { slug: updateData.slug } : undefined,
-            updateData.name ? { name: { equals: updateData.name, mode: 'insensitive' } } : undefined,
-          ].filter(Boolean) as any,
+          OR: orConditions,
         },
       });
       if (existing) {
@@ -762,13 +872,37 @@ export class EnhancedBlogService {
 
   async bulkSetParent(tagIds: string[], parentId: string | null) {
     const targets = await this.prisma.tag.findMany({ where: { id: { in: tagIds } } });
-    const allowedIds = targets.filter(t => !t.locked && t.id !== parentId).map(t => t.id);
+    const allowedIds: string[] = [];
+    for (const tag of targets) {
+      if (tag.locked || tag.id === parentId) continue;
+      if (parentId && await this.wouldCreateTagCycle(tag.id, parentId)) {
+        continue;
+      }
+      allowedIds.push(tag.id);
+    }
     if (allowedIds.length === 0) return { updated: 0 };
     const result = await this.prisma.tag.updateMany({
       where: { id: { in: allowedIds } },
       data: { parentId: parentId || null },
     });
     return { updated: result.count };
+  }
+
+  private async wouldCreateTagCycle(tagId: string, parentId: string | null): Promise<boolean> {
+    if (!parentId) return false;
+    let current = parentId;
+    const visited = new Set<string>();
+    while (current) {
+      if (current === tagId) return true;
+      if (visited.has(current)) return true;
+      visited.add(current);
+      const parent = await this.prisma.tag.findUnique({
+        where: { id: current },
+        select: { parentId: true },
+      });
+      current = parent?.parentId ?? null;
+    }
+    return false;
   }
 
   async bulkUpdateStyle(tagIds: string[], data: { color?: string; icon?: string; featured?: boolean }) {
@@ -847,11 +981,11 @@ export class EnhancedBlogService {
    * Detect potential duplicate tags by name similarity
    */
   async findDuplicateTags(threshold: number = 0.28) {
-    const tags = await this.prisma.tag.findMany({
+    const tags: TagSummary[] = await this.prisma.tag.findMany({
       select: { id: true, name: true, slug: true, usageCount: true },
     });
 
-    const duplicates: Array<{ a: any; b: any; score: number }> = [];
+    const duplicates: Array<{ a: TagSummary; b: TagSummary; score: number }> = [];
 
     for (let i = 0; i < tags.length; i++) {
       for (let j = i + 1; j < tags.length; j++) {

@@ -3,8 +3,28 @@ import Link from 'next/link';
 import { API_URL } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent } from '@/components/ui/Card';
+import logger from '@/lib/logger';
 
-async function getTagData() {
+type Tag = {
+  id: string;
+  slug: string;
+  name?: string;
+  featured?: boolean;
+};
+
+const toTag = (value: unknown): Tag | null => {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== 'string' || typeof obj.slug !== 'string') return null;
+  return {
+    id: obj.id,
+    slug: obj.slug,
+    name: typeof obj.name === 'string' ? obj.name : undefined,
+    featured: typeof obj.featured === 'boolean' ? obj.featured : undefined,
+  };
+};
+
+async function getTagData(): Promise<{ all: Tag[]; trending: Tag[] }> {
   try {
     const [allRes, trendingRes] = await Promise.all([
       fetch(`${API_URL}/blog/tags`, { next: { revalidate: 300 } }),
@@ -13,9 +33,14 @@ async function getTagData() {
 
     const all = allRes.ok ? await allRes.json() : [];
     const trending = trendingRes.ok ? await trendingRes.json() : [];
-    return { all: Array.isArray(all) ? all : [], trending: Array.isArray(trending) ? trending : [] };
+    const allList = Array.isArray(all) ? all : [];
+    const trendingList = Array.isArray(trending) ? trending : [];
+    return {
+      all: allList.map(toTag).filter((tag): tag is Tag => tag !== null),
+      trending: trendingList.map(toTag).filter((tag): tag is Tag => tag !== null),
+    };
   } catch (e) {
-    console.error('TagExplorer fetch error', e);
+    logger.error('TagExplorer fetch error', e, { component: 'TagExplorer' });
     return { all: [], trending: [] };
   }
 }
@@ -24,7 +49,7 @@ export default async function TagExplorer() {
   const { all, trending } = await getTagData();
   if (all.length === 0) return null;
 
-  const featured = all.filter((t: any) => t.featured);
+  const featured = all.filter((t) => t.featured);
 
   return (
     <Card>
@@ -40,7 +65,7 @@ export default async function TagExplorer() {
           <div>
             <div className="text-xs uppercase text-slate-500 mb-2">Trending</div>
             <div className="flex flex-wrap gap-2">
-              {trending.map((tag: any) => (
+              {trending.map((tag) => (
                 <Link key={tag.id} href={`/blog?tag=${tag.slug}`}>
                   <Badge variant="error" size="lg">
                     {tag.name}
@@ -55,7 +80,7 @@ export default async function TagExplorer() {
           <div>
             <div className="text-xs uppercase text-slate-500 mb-2">Featured</div>
             <div className="flex flex-wrap gap-2">
-              {featured.map((tag: any) => (
+              {featured.map((tag) => (
                 <Link key={tag.id} href={`/blog?tag=${tag.slug}`}>
                   <Badge variant="warning" size="lg">
                     {tag.name}
@@ -69,7 +94,7 @@ export default async function TagExplorer() {
         <div>
           <div className="text-xs uppercase text-slate-500 mb-2">All Tags</div>
           <div className="flex flex-wrap gap-2">
-            {all.slice(0, 60).map((tag: any) => (
+            {all.slice(0, 60).map((tag) => (
               <Link key={tag.id} href={`/blog?tag=${tag.slug}`}>
                 <Badge variant="outline" size="lg">
                   {tag.name}

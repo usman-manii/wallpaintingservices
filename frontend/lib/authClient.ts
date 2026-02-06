@@ -1,6 +1,7 @@
 'use client';
 
 import { fetchAPI } from './api';
+import type { JsonValue } from '@/types/json';
 
 const ADMIN_ROLES = ['ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR'] as const;
 
@@ -8,16 +9,48 @@ export type AuthUser = {
   id?: string;
   email?: string;
   role?: string;
-  [key: string]: any;
-};
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  name?: string;
+} & Record<string, JsonValue>;
 
 export type AuthRouter = { push: (href: string) => void; replace: (href: string) => void };
 
-export const isAdminRole = (role?: string | null) => !!role && ADMIN_ROLES.includes(role as any);
+type AdminRole = (typeof ADMIN_ROLES)[number];
+
+const toAuthUser = (value: unknown): AuthUser => {
+  if (!value || typeof value !== 'object') return {};
+  const obj = value as Record<string, unknown>;
+  const user: AuthUser = {};
+  if (typeof obj.id === 'string') user.id = obj.id;
+  if (typeof obj.email === 'string') user.email = obj.email;
+  if (typeof obj.role === 'string') user.role = obj.role;
+  if (typeof obj.firstName === 'string') user.firstName = obj.firstName;
+  if (typeof obj.lastName === 'string') user.lastName = obj.lastName;
+  if (typeof obj.username === 'string') user.username = obj.username;
+  if (typeof obj.name === 'string') user.name = obj.name;
+  return user;
+};
+
+export const extractAuthUser = (data: unknown): AuthUser => {
+  if (data && typeof data === 'object') {
+    const obj = data as Record<string, unknown>;
+    const nested = obj.user;
+    if (nested && typeof nested === 'object') {
+      return toAuthUser(nested);
+    }
+    return toAuthUser(obj);
+  }
+  return {};
+};
+
+export const isAdminRole = (role?: string | null): role is AdminRole =>
+  typeof role === 'string' && ADMIN_ROLES.includes(role as AdminRole);
 
 export const resolvePostAuthDestination = (role?: string | null, next?: string | null) => {
   if (next) return next;
-  return isAdminRole(role) ? '/dashboard' : '/profile';
+  return isAdminRole(role) ? '/dashboard' : '/';
 };
 
 type LoginPayload = {
@@ -44,7 +77,7 @@ export async function loginUser(body: LoginPayload): Promise<AuthUser> {
     redirectOn401: false,
   });
 
-  return (data as any)?.user || data;
+  return extractAuthUser(data);
 }
 
 export async function registerUser(body: RegisterPayload): Promise<AuthUser> {
@@ -56,7 +89,7 @@ export async function registerUser(body: RegisterPayload): Promise<AuthUser> {
     redirectOn401: false,
   });
 
-  return (data as any)?.user || data;
+  return extractAuthUser(data);
 }
 
 export async function refreshUserSession() {

@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -10,6 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { fetchAPI, API_URL } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-utils';
 import {
   Upload,
   Search,
@@ -18,13 +21,14 @@ import {
   File,
   Trash2,
   Edit2,
-  Link as LinkIcon,
   Download,
   X,
   Plus,
   Grid,
   List,
   Filter,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 
 interface MediaFile {
@@ -52,6 +56,91 @@ interface MediaFile {
 type ViewMode = 'grid' | 'list';
 type UploadMode = 'file' | 'url';
 
+type EditForm = {
+  title: string;
+  description: string;
+  altText: string;
+};
+
+const DEFAULT_EDIT_FORM: EditForm = {
+  title: '',
+  description: '',
+  altText: '',
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseNumber = (value: unknown, fallback = 0): number => (
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
+
+const parseStringArray = (value: unknown): string[] => (
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+);
+
+const parseVariants = (value: unknown): Record<string, string> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const entries = Object.entries(value).filter(([, val]) => typeof val === 'string');
+  if (entries.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(entries) as Record<string, string>;
+};
+
+const parseMediaFile = (value: unknown): MediaFile | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  const filename = parseString(value.filename);
+  const originalName = parseString(value.originalName);
+  const mimeType = parseString(value.mimeType);
+  const url = parseString(value.url);
+  const folder = parseString(value.folder);
+  const createdAt = parseString(value.createdAt);
+  const updatedAt = parseString(value.updatedAt);
+  if (!id || !filename || !originalName || !mimeType || !url || !createdAt || !updatedAt) {
+    return null;
+  }
+  const uploadedByRaw = isRecord(value.uploadedBy) ? value.uploadedBy : null;
+  const uploadedBy = uploadedByRaw && parseString(uploadedByRaw.username)
+    ? { username: parseString(uploadedByRaw.username) }
+    : undefined;
+  return {
+    id,
+    filename,
+    originalName,
+    mimeType,
+    size: parseNumber(value.size),
+    url,
+    width: typeof value.width === 'number' ? value.width : undefined,
+    height: typeof value.height === 'number' ? value.height : undefined,
+    folder,
+    title: parseString(value.title) || undefined,
+    description: parseString(value.description) || undefined,
+    altText: parseString(value.altText) || undefined,
+    tags: parseStringArray(value.tags),
+    variants: parseVariants(value.variants),
+    createdAt,
+    updatedAt,
+    uploadedBy,
+  };
+};
+
+const parseMediaList = (value: unknown): MediaFile[] => (
+  Array.isArray(value)
+    ? value.map(parseMediaFile).filter((file): file is MediaFile => !!file)
+    : []
+);
+
 export default function MediaManagerPage() {
   const { success, error: showError } = useToast();
   const { dialog, confirm } = useConfirmDialog();
@@ -65,9 +154,12 @@ export default function MediaManagerPage() {
   const [folders, setFolders] = useState<string[]>([]);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [editingMedia, setEditingMedia] = useState<MediaFile | null>(null);
-  const [editForm, setEditForm] = useState({ title: '', description: '', altText: '' });
+  const [editForm, setEditForm] = useState<EditForm>(DEFAULT_EDIT_FORM);
   const [urlInput, setUrlInput] = useState('');
+  const [isDragActive, setIsDragActive] = useState(false);
+  const [uploadSummary, setUploadSummary] = useState({ total: 0, completed: 0, failed: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
 
   const fetchMedia = useCallback(async () => {
     try {
@@ -79,17 +171,23 @@ export default function MediaManagerPage() {
       
       const data = await fetchAPI(`/media?${params.toString()}`, { redirectOn401: false, cache: 'no-store' });
       // Handle paginated response from backend
-      const files = Array.isArray(data) ? data : (data?.items || data?.files || []);
+      let rawList: unknown = [];
+      if (Array.isArray(data)) {
+        rawList = data;
+      } else if (isRecord(data)) {
+        rawList = data.items ?? data.files ?? [];
+      }
+      const files = parseMediaList(rawList);
       setMedia(files);
       
       // Extract unique folders
       const uniqueFolders = Array.from(
-        new Set<string>((files.map((f: MediaFile) => f.folder).filter(Boolean) as string[])),
+        new Set<string>(files.map((file) => file.folder).filter((folder) => folder.length > 0)),
       );
       setFolders(uniqueFolders);
-    } catch (error: any) {
-      console.error('Error fetching media:', error);
-      showError(error.message || 'Failed to load media files');
+    } catch (error: unknown) {
+      logger.error('Error fetching media:', error);
+      showError(getErrorMessage(error, 'Failed to load media files'));
       setMedia([]);
     } finally {
       setLoading(false);
@@ -100,45 +198,97 @@ export default function MediaManagerPage() {
     fetchMedia();
   }, [fetchMedia]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file size (10MB)
+  const validateFile = (file: File): string | null => {
     if (file.size > 10 * 1024 * 1024) {
-      showError('File size must be less than 10MB');
-      return;
+      return 'File size must be less than 10MB';
+    }
+    if (!file.type.startsWith('image/')) {
+      return 'Only image files are allowed';
+    }
+    return null;
+  };
+
+  const uploadSingleFile = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folderFilter !== 'all' ? folderFilter : 'uploads');
+
+    await fetchAPI('/media/upload', {
+      method: 'POST',
+      body: formData,
+      redirectOn401: false,
+      cache: 'no-store',
+    });
+  };
+
+  const uploadFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+
+    const validFiles: File[] = [];
+    const errors: string[] = [];
+
+    files.forEach((file) => {
+      const error = validateFile(file);
+      if (error) {
+        errors.push(`${file.name}: ${error}`);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (errors.length > 0) {
+      showError(errors.slice(0, 3).join('\n'));
     }
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      showError('Only image files are allowed');
-      return;
-    }
+    if (validFiles.length === 0) return;
 
     setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', folderFilter !== 'all' ? folderFilter : 'uploads');
+    setUploadSummary({ total: validFiles.length, completed: 0, failed: 0 });
 
-      const data = await fetchAPI('/media/upload', {
-        method: 'POST',
-        body: formData,
-        redirectOn401: false,
-        cache: 'no-store',
-      });
+    let completed = 0;
+    let failed = 0;
 
-      success('File uploaded successfully!');
-      setShowUploadModal(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      fetchMedia();
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      showError(error.message || 'Failed to upload file');
-    } finally {
-      setUploading(false);
+    for (const file of validFiles) {
+      try {
+        await uploadSingleFile(file);
+        completed += 1;
+        setUploadSummary((prev) => ({ ...prev, completed }));
+      } catch (error: unknown) {
+        failed += 1;
+        setUploadSummary((prev) => ({ ...prev, failed }));
+        logger.error('Upload error:', error);
+      }
     }
+
+    if (failed === 0) {
+      success(validFiles.length === 1 ? 'File uploaded successfully!' : `${validFiles.length} files uploaded successfully!`);
+    } else if (completed > 0) {
+      success(`${completed} files uploaded. ${failed} failed.`);
+    } else {
+      showError('Failed to upload files');
+    }
+
+    setShowUploadModal(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    fetchMedia();
+    setUploading(false);
+  }, [fetchMedia, folderFilter, showError, success]);
+
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (files.length > 0) {
+        uploadFiles(files);
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [uploadFiles]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    await uploadFiles(files);
   };
 
   const handleUrlUpload = async () => {
@@ -163,11 +313,44 @@ export default function MediaManagerPage() {
       setUrlInput('');
       setShowUploadModal(false);
       fetchMedia();
-    } catch (error: any) {
-      console.error('URL upload error:', error);
-      showError(error.message || 'Failed to upload from URL');
+    } catch (error: unknown) {
+      logger.error('URL upload error:', error);
+      showError(getErrorMessage(error, 'Failed to upload from URL'));
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current += 1;
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) {
+      setIsDragActive(false);
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsDragActive(false);
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) {
+      uploadFiles(files);
     }
   };
 
@@ -180,9 +363,9 @@ export default function MediaManagerPage() {
           await fetchAPI(`/media/${mediaId}`, { method: 'DELETE', redirectOn401: false, cache: 'no-store' });
           success('File deleted successfully');
           fetchMedia();
-        } catch (error: any) {
-          console.error('Delete error:', error);
-          showError(error.message || 'Failed to delete file');
+        } catch (error: unknown) {
+          logger.error('Delete error:', error);
+          showError(getErrorMessage(error, 'Failed to delete file'));
         }
       }
     );
@@ -210,9 +393,9 @@ export default function MediaManagerPage() {
       success('Media updated successfully');
       setEditingMedia(null);
       fetchMedia();
-    } catch (error: any) {
-      console.error('Update error:', error);
-      showError(error.message || 'Failed to update media');
+    } catch (error: unknown) {
+      logger.error('Update error:', error);
+      showError(getErrorMessage(error, 'Failed to update media'));
     }
   };
 
@@ -229,6 +412,30 @@ export default function MediaManagerPage() {
     return `${API_URL.replace('/api', '')}${file.url}`;
   };
 
+  const handleCopyUrl = async (file: MediaFile) => {
+    try {
+      await navigator.clipboard.writeText(getImageUrl(file));
+      success('Media URL copied to clipboard');
+    } catch (error: unknown) {
+      logger.error('Copy URL error:', error);
+      showError('Failed to copy URL');
+    }
+  };
+
+  const handleOpenInNewTab = (file: MediaFile) => {
+    window.open(getImageUrl(file), '_blank', 'noopener,noreferrer');
+  };
+
+  const handleDownload = (file: MediaFile) => {
+    const link = document.createElement('a');
+    link.href = getImageUrl(file);
+    link.download = file.originalName || file.filename;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const filteredMedia = media.filter((file) => {
     const matchesSearch = searchQuery === '' || 
       file.originalName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -238,7 +445,21 @@ export default function MediaManagerPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <div
+      className="p-6 space-y-6"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handleFileUpload}
+        className="hidden"
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Media Manager</h1>
@@ -259,6 +480,24 @@ export default function MediaManagerPage() {
           </Button>
         </div>
       </div>
+
+      {uploading && uploadSummary.total > 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-slate-900 dark:text-white">Uploading files</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  {uploadSummary.completed} of {uploadSummary.total} completed{uploadSummary.failed ? `, ${uploadSummary.failed} failed` : ''}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span>Paste from clipboard supported</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card>
@@ -294,6 +533,33 @@ export default function MediaManagerPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-white">Quick Upload</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Drag & drop, paste from clipboard, or click to upload multiple files.
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+              <Upload className="w-4 h-4 mr-2" />
+              Choose Files
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isDragActive && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+          <div className="rounded-xl border border-dashed border-white/40 bg-slate-900/80 px-10 py-8 text-center text-white">
+            <Upload className="w-12 h-12 mx-auto mb-3" />
+            <div className="text-lg font-semibold">Drop files to upload</div>
+            <div className="text-xs text-white/70 mt-1">Images only, up to 10MB each</div>
+          </div>
+        </div>
+      )}
 
       {/* Upload Modal */}
       {showUploadModal && (
@@ -336,16 +602,8 @@ export default function MediaManagerPage() {
                   <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-8 text-center">
                     <Upload className="w-12 h-12 mx-auto text-slate-400 mb-4" />
                     <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                      Drag and drop an image, or click to select
+                      Drag and drop images, paste from clipboard, or click to select multiple files
                     </p>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                      id="file-upload"
-                    />
                     <Button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
@@ -460,6 +718,27 @@ export default function MediaManagerPage() {
                   <Button
                     size="sm"
                     variant="secondary"
+                    onClick={() => handleOpenInNewTab(file)}
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleCopyUrl(file)}
+                  >
+                    <Copy className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleDownload(file)}
+                  >
+                    <Download className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
                     onClick={() => handleDelete(file.id, file.originalName)}
                   >
                     <Trash2 className="w-3 h-3" />
@@ -535,6 +814,27 @@ export default function MediaManagerPage() {
                         <Button
                           size="sm"
                           variant="ghost"
+                          onClick={() => handleOpenInNewTab(file)}
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleCopyUrl(file)}
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDownload(file)}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           onClick={() => handleDelete(file.id, file.originalName)}
                         >
                           <Trash2 className="w-4 h-4" />
@@ -553,3 +853,5 @@ export default function MediaManagerPage() {
     </div>
   );
 }
+
+

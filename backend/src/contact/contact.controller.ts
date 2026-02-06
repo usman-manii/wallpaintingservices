@@ -1,5 +1,6 @@
 // src/contact/contact.controller.ts
 import { Body, Controller, Get, Post, UseGuards, BadRequestException, Request } from '@nestjs/common';
+import { Request as ExpressRequest } from 'express';
 import { ContactService } from './contact.service';
 import { Public } from '../auth/public.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -17,7 +18,7 @@ export class ContactController {
 
   @Public()
   @Post()
-  async sendMessage(@Body() body: ContactMessageDto, @Request() req: any) {
+  async sendMessage(@Body() body: ContactMessageDto, @Request() req: ExpressRequest) {
     if (body.captchaToken) {
       const ip =
         (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||

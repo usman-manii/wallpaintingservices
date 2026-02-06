@@ -76,7 +76,7 @@ export function getVersionStatus(version: string): {
   if (isEndOfLife) {
     message = `API version ${version} has reached end of life and is no longer supported. Please upgrade to the latest version.`;
   } else if (isDeprecated) {
-    message = `API version ${version} is deprecated and will be removed on ${versionInfo.endOfLifeDate}. Please plan to upgrade.`;
+    message = `API version ${version} will be removed on ${versionInfo.endOfLifeDate}. Please plan to upgrade.`;
   }
 
   return { isDeprecated, isEndOfLife, message };

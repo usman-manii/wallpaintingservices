@@ -9,7 +9,7 @@ export class QueueService {
   /**
    * Add a job to the Postgres Queue
    */
-  async addJob(type: string, payload: any) {
+  async addJob(type: string, payload: Prisma.InputJsonValue) {
     return this.prisma.queueJob.create({
       data: {
         type,

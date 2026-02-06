@@ -5,15 +5,27 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Type } from 'lucide-react';
 
+type HeadingTag = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+type HeadingAlignment = 'left' | 'center' | 'right';
+
+type HeadingConfig = {
+  content: string;
+  tag: HeadingTag;
+  font: string;
+  fontSize?: string;
+  color: string;
+  alignment: HeadingAlignment;
+};
+
 interface HeadingWidgetProps {
   content?: string;
-  tag?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+  tag?: HeadingTag;
   font?: string;
   fontSize?: string;
   color?: string;
-  alignment?: 'left' | 'center' | 'right';
+  alignment?: HeadingAlignment;
   editable?: boolean;
-  onChange?: (data: any) => void;
+  onChange?: (data: HeadingConfig) => void;
 }
 
 export default function HeadingWidget({
@@ -121,7 +133,12 @@ export default function HeadingWidget({
             </label>
             <select
               value={localTag}
-              onChange={(e) => setLocalTag(e.target.value as any)}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === 'h1' || value === 'h2' || value === 'h3' || value === 'h4' || value === 'h5' || value === 'h6') {
+                  setLocalTag(value);
+                }
+              }}
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg 
                        bg-white dark:bg-slate-800 text-slate-900 dark:text-white
                        focus:ring-2 focus:ring-blue-500 focus:border-transparent"

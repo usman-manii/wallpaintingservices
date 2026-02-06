@@ -17,6 +17,8 @@ interface PublicSettings {
   homePageId?: string | null;
   blogPageId?: string | null;
   topBarEnabled?: boolean;
+  cookieConsentEnabled?: boolean;
+  cookieConsentConfig?: Record<string, unknown> | null;
   googleSiteVerification?: string | null;
   bingSiteVerification?: string | null;
   yandexSiteVerification?: string | null;
@@ -159,3 +161,5 @@ export function usePublicSettings() {
   }
   return context;
 }
+
+export default SettingsProvider;

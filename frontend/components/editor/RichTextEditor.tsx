@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 /**
  * Enterprise-Grade Rich Text Editor
  * Production-Ready, Self-Contained, Pluggable
@@ -206,7 +208,7 @@ export default function RichTextEditor({
       const url = await onImageUpload(file);
       insertImage(url);
     } catch (error) {
-      console.error('Image upload failed:', error);
+      logger.error('Image upload failed:', error);
       // Toast notification would be shown by parent component
     }
   }, [onImageUpload, insertImage]);
@@ -816,3 +818,4 @@ export default function RichTextEditor({
     </div>
   );
 }
+

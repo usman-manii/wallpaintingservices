@@ -2,6 +2,7 @@
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import Script from 'next/script';
 import CommentSection from '@/components/CommentSection';
 import ReadingProgress from '@/components/ReadingProgress';
 import TableOfContents from '@/components/TableOfContents';
@@ -10,15 +11,65 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { ArrowLeft, Calendar, User, Clock, Eye } from 'lucide-react';
 import { API_URL } from '@/lib/api';
+import { SafeHtml } from '@/components/SafeHtml';
+import logger from '@/lib/logger';
 
-async function getPost(slug: string) {
+type BlogAuthor = {
+  username?: string;
+  displayName?: string;
+};
+
+type BlogTag = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+type BlogCategory = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+type BlogPost = {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  excerpt?: string;
+  status?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  seoKeywords?: string[];
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: string;
+  twitterCard?: string;
+  featuredImage?: string;
+  publishedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+  author?: BlogAuthor;
+  categories?: BlogCategory[];
+  tags?: BlogTag[];
+  readingTime?: number;
+  viewCount?: number;
+  aiGenerated?: boolean;
+  _count?: { comments?: number };
+  views?: number;
+};
+
+type RelatedPost = Pick<BlogPost, 'id' | 'slug' | 'title' | 'publishedAt' | 'createdAt'>;
+
+async function getPost(slug: string): Promise<BlogPost | null> {
   try {
     const res = await fetch(`${API_URL}/blog/${slug}`, {
        next: { revalidate: 60 } // Cache for 1 minute
     });
     if (!res.ok) return null;
-    return res.json();
-  } catch (e) {
+    return res.json() as Promise<BlogPost>;
+  } catch (error) {
+    logger.error('Failed to load blog post', error);
     return null;
   }
 }
@@ -44,14 +95,15 @@ function buildContentWithToc(html: string) {
   return { contentWithIds, toc: headings };
 }
 
-async function getRelatedPosts(postId: string) {
+async function getRelatedPosts(postId: string): Promise<RelatedPost[]> {
   try {
     const res = await fetch(`${API_URL}/blog/${postId}/related`, {
       next: { revalidate: 120 } // Cache for 2 minutes
     });
     if (!res.ok) return [];
-    return res.json();
-  } catch (e) {
+    return res.json() as Promise<RelatedPost[]>;
+  } catch (error) {
+    logger.error('Failed to load related posts', error);
     return [];
   }
 }
@@ -64,6 +116,23 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
   const postUrl = `${siteUrl}/blog/${post.slug}`;
   const imageUrl = post.ogImage || post.featuredImage || `${siteUrl}/default-blog-image.jpg`;
+  const twitterCard =
+    post.twitterCard === 'summary' ||
+    post.twitterCard === 'summary_large_image' ||
+    post.twitterCard === 'player' ||
+    post.twitterCard === 'app'
+      ? post.twitterCard
+      : 'summary_large_image';
+  const publishedTime = post.publishedAt ? new Date(post.publishedAt).toISOString() : undefined;
+  const updatedTime = post.updatedAt ? new Date(post.updatedAt).toISOString() : undefined;
+  const authorName = post.author?.displayName || post.author?.username;
+  const other: Record<string, string> = {
+    ...(publishedTime ? { 'article:published_time': publishedTime } : {}),
+    ...(updatedTime ? { 'article:modified_time': updatedTime } : {}),
+    ...(authorName ? { 'article:author': authorName } : {}),
+    'article:section': post.categories?.[0]?.name || 'Blog',
+    'article:tag': post.tags?.map((t) => t.name).join(',') || '',
+  };
   
   return {
     title: post.seoTitle || post.title,
@@ -94,11 +163,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       publishedTime: post.publishedAt,
       modifiedTime: post.updatedAt,
       authors: [post.author?.displayName || post.author?.username || 'AI Editor'],
-      tags: post.tags?.map((t: any) => t.name) || [],
+      tags: post.tags?.map((t) => t.name) || [],
       section: post.categories?.[0]?.name,
     },
     twitter: {
-      card: post.twitterCard || 'summary_large_image',
+      card: twitterCard,
       title: post.ogTitle || post.seoTitle || post.title,
       description: post.ogDescription || post.seoDescription || post.excerpt,
       images: [imageUrl],
@@ -117,17 +186,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
         'max-snippet': -1,
       },
     },
-    other: {
-      'article:published_time': post.publishedAt,
-      'article:modified_time': post.updatedAt,
-      'article:author': post.author?.displayName || post.author?.username,
-      'article:section': post.categories?.[0]?.name || 'Blog',
-      'article:tag': post.tags?.map((t: any) => t.name).join(',') || '',
-    },
+    other,
   };
 }
 
-export default async function BlogPost({ params }: { params: Promise<{ slug: string }> }) {
+export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const post = await getPost(slug);
   
@@ -180,7 +243,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
             </span>
             {post.aiGenerated && (
               <span className="flex items-center gap-2 bg-primary text-primary-foreground px-3 py-1 rounded-full text-xs">
-                🤖 AI-Enhanced
+                AI-Enhanced
               </span>
             )}
           </div>
@@ -188,7 +251,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
           {/* Tags */}
           {post.tags && post.tags.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-6">
-              {post.tags.map((tag: any) => (
+              {post.tags.map((tag) => (
                 <Link
                   key={tag.id}
                   href={`/blog?tag=${tag.slug}`}
@@ -208,17 +271,16 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
             <div 
               id="post-content"
               className="prose prose-lg prose-slate dark:prose-invert max-w-none mb-12"
-              // SECURITY NOTE: Content is sanitized on backend using SanitizationUtil.sanitizeHTML()
-              // which removes script tags, event handlers, and dangerous protocols
-              dangerouslySetInnerHTML={{ __html: contentWithIds }} 
-            />
+            >
+              <SafeHtml html={contentWithIds} as="div" />
+            </div>
 
             {/* Categories */}
             {post.categories && post.categories.length > 0 && (
               <div className="border-t border-border pt-8 mt-8">
                 <h4 className="font-bold text-foreground mb-4">Categories</h4>
                 <div className="flex flex-wrap gap-2">
-                  {post.categories.map((cat: any) => (
+                  {post.categories.map((cat) => (
                     <Link
                       key={cat.id}
                       href={`/blog?category=${cat.slug}`}
@@ -250,7 +312,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {relatedPosts.map((relatedPost: any, index: number) => {
+                  {relatedPosts.map((relatedPost, index: number) => {
                     // Safe date handling
                     const dateValue = relatedPost.publishedAt || relatedPost.createdAt;
                     let formattedDate = 'N/A';
@@ -261,8 +323,8 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
                           formattedDate = date.toLocaleDateString();
                         }
                       }
-                    } catch (e) {
-                      console.error('Date formatting error:', e);
+                    } catch (error) {
+                      logger.error('Date formatting error', error);
                     }
                     
                     return (
@@ -294,136 +356,133 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
       </div>
 
       {/* Enhanced SEO Schema.org JSON-LD with Breadcrumbs and Organization */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            '@context': 'https://schema.org',
-            '@graph': [
-              {
-                '@type': 'BlogPosting',
-                '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}#article`,
-                headline: post.title,
-                alternativeHeadline: post.seoTitle,
-                description: post.seoDescription || post.excerpt,
-                image: {
+      <Script id="blog-schema" type="application/ld+json" strategy="afterInteractive">
+        {JSON.stringify({
+          '@context': 'https://schema.org',
+          '@graph': [
+            {
+              '@type': 'BlogPosting',
+              '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}#article`,
+              headline: post.title,
+              alternativeHeadline: post.seoTitle,
+              description: post.seoDescription || post.excerpt,
+              image: {
+                '@type': 'ImageObject',
+                url: post.featuredImage || post.ogImage || `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/default-blog-image.jpg`,
+                width: 1200,
+                height: 630,
+              },
+              datePublished: post.publishedAt || post.createdAt,
+              dateModified: post.updatedAt,
+              author: {
+                '@type': 'Person',
+                '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/author/${post.author?.username}#person`,
+                name: post.author?.displayName || post.author?.username || 'AI Editor',
+                url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/author/${post.author?.username}`,
+              },
+              publisher: {
+                '@type': 'Organization',
+                '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}#organization`,
+                name: 'Wall Painting Services',
+                url: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+                logo: {
                   '@type': 'ImageObject',
-                  url: post.featuredImage || post.ogImage || `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/default-blog-image.jpg`,
-                  width: 1200,
-                  height: 630,
+                  url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/logo.png`,
+                  width: 600,
+                  height: 60,
                 },
-                datePublished: post.publishedAt || post.createdAt,
-                dateModified: post.updatedAt,
-                author: {
-                  '@type': 'Person',
-                  '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/author/${post.author?.username}#person`,
-                  name: post.author?.displayName || post.author?.username || 'AI Editor',
-                  url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/author/${post.author?.username}`,
-                },
-                publisher: {
-                  '@type': 'Organization',
-                  '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}#organization`,
-                  name: 'Wall Painting Services',
-                  url: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-                  logo: {
-                    '@type': 'ImageObject',
-                    url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/logo.png`,
-                    width: 600,
-                    height: 60,
-                  },
-                  sameAs: [
-                    'https://facebook.com/wallpaintingservices',
-                    'https://twitter.com/wallpaintingservices',
-                    'https://instagram.com/wallpaintingservices',
-                    'https://linkedin.com/company/wallpaintingservices',
-                  ],
-                },
-                mainEntityOfPage: {
-                  '@type': 'WebPage',
-                  '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}`,
-                },
-                keywords: post.seoKeywords?.join(', '),
-                articleSection: post.categories?.[0]?.name,
-                articleBody: post.content.replace(/<[^>]*>/g, '').substring(0, 500) + '...',
-                wordCount: post.content.split(/\\s+/).length,
-                timeRequired: `PT${post.readingTime || 5}M`,
-                inLanguage: 'en-US',
-                copyrightYear: new Date(post.publishedAt || post.createdAt).getFullYear(),
-                copyrightHolder: {
-                  '@type': 'Organization',
-                  name: 'Wall Painting Services',
-                },
-                commentCount: post._count?.comments || 0,
-                interactionStatistic: [
-                  {
-                    '@type': 'InteractionCounter',
-                    interactionType: 'https://schema.org/ReadAction',
-                    userInteractionCount: post.views || 0,
-                  },
-                  {
-                    '@type': 'InteractionCounter',
-                    interactionType: 'https://schema.org/CommentAction',
-                    userInteractionCount: post._count?.comments || 0,
-                  },
+                sameAs: [
+                  'https://facebook.com/wallpaintingservices',
+                  'https://twitter.com/wallpaintingservices',
+                  'https://instagram.com/wallpaintingservices',
+                  'https://linkedin.com/company/wallpaintingservices',
                 ],
               },
-              {
-                '@type': 'BreadcrumbList',
-                '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}#breadcrumb`,
-                itemListElement: [
-                  {
-                    '@type': 'ListItem',
-                    position: 1,
-                    name: 'Home',
-                    item: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-                  },
-                  {
-                    '@type': 'ListItem',
-                    position: 2,
-                    name: 'Blog',
-                    item: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog`,
-                  },
-                  {
-                    '@type': 'ListItem',
-                    position: 3,
-                    name: post.title,
-                    item: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}`,
-                  },
-                ],
-              },
-              {
+              mainEntityOfPage: {
                 '@type': 'WebPage',
-                '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}#webpage`,
-                url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}`,
-                name: post.title,
-                description: post.seoDescription || post.excerpt,
-                isPartOf: {
-                  '@type': 'WebSite',
-                  '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}#website`,
-                  url: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-                  name: 'Wall Painting Services',
-                  publisher: {
-                    '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}#organization`,
-                  },
+                '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}`,
+              },
+              keywords: post.seoKeywords?.join(', '),
+              articleSection: post.categories?.[0]?.name,
+              articleBody: post.content.replace(/<[^>]*>/g, '').substring(0, 500) + '...',
+              wordCount: post.content.split(/\\s+/).length,
+              timeRequired: `PT${post.readingTime || 5}M`,
+              inLanguage: 'en-US',
+              copyrightYear: new Date(post.publishedAt || post.createdAt).getFullYear(),
+              copyrightHolder: {
+                '@type': 'Organization',
+                name: 'Wall Painting Services',
+              },
+              commentCount: post._count?.comments || 0,
+              interactionStatistic: [
+                {
+                  '@type': 'InteractionCounter',
+                  interactionType: 'https://schema.org/ReadAction',
+                  userInteractionCount: post.viewCount || 0,
                 },
-                primaryImageOfPage: {
-                  '@type': 'ImageObject',
-                  url: post.featuredImage || post.ogImage,
+                {
+                  '@type': 'InteractionCounter',
+                  interactionType: 'https://schema.org/CommentAction',
+                  userInteractionCount: post._count?.comments || 0,
                 },
-                datePublished: post.publishedAt || post.createdAt,
-                dateModified: post.updatedAt,
-                breadcrumb: {
-                  '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}#breadcrumb`,
+              ],
+            },
+            {
+              '@type': 'BreadcrumbList',
+              '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}#breadcrumb`,
+              itemListElement: [
+                {
+                  '@type': 'ListItem',
+                  position: 1,
+                  name: 'Home',
+                  item: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
                 },
-                potentialAction: {
-                  '@type': 'ReadAction',
-                  target: [`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}`],
+                {
+                  '@type': 'ListItem',
+                  position: 2,
+                  name: 'Blog',
+                  item: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog`,
+                },
+                {
+                  '@type': 'ListItem',
+                  position: 3,
+                  name: post.title,
+                  item: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}`,
+                },
+              ],
+            },
+            {
+              '@type': 'WebPage',
+              '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}#webpage`,
+              url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}`,
+              name: post.title,
+              description: post.seoDescription || post.excerpt,
+              isPartOf: {
+                '@type': 'WebSite',
+                '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}#website`,
+                url: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+                name: 'Wall Painting Services',
+                publisher: {
+                  '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}#organization`,
                 },
               },
-            ],
-          }),
-        }}
-      />
+              primaryImageOfPage: {
+                '@type': 'ImageObject',
+                url: post.featuredImage || post.ogImage,
+              },
+              datePublished: post.publishedAt || post.createdAt,
+              dateModified: post.updatedAt,
+              breadcrumb: {
+                '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}#breadcrumb`,
+              },
+              potentialAction: {
+                '@type': 'ReadAction',
+                target: [`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blog/${post.slug}`],
+              },
+            },
+          ],
+        })}
+      </Script>
     </div>
   );
 }

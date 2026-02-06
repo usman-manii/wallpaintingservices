@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
@@ -14,7 +16,7 @@ interface GenerationJob {
   topic: string;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
   createdAt: string;
-  result?: any;
+  result?: unknown;
 }
 
 export default function AIContentPage() {
@@ -26,14 +28,15 @@ export default function AIContentPage() {
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [message, setMessage] = useState('');
+  const [messageTone, setMessageTone] = useState<'success' | 'error' | null>(null);
   const [activeTab, setActiveTab] = useState<'generate' | 'settings'>('generate');
 
   const fetchJobs = useCallback(async () => {
     try {
       const data = await fetchAPI('/queue/jobs', { redirectOn401: false, cache: 'no-store' });
       setJobs(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error fetching jobs:', error);
+    } catch (error: unknown) {
+      logger.error('Error fetching jobs', error, { component: 'AIContentPage' });
     }
   }, []);
 
@@ -49,6 +52,7 @@ export default function AIContentPage() {
 
     setLoading(true);
     setMessage('');
+    setMessageTone(null);
 
     try {
       await fetchAPI('/queue/generate', {
@@ -62,13 +66,15 @@ export default function AIContentPage() {
         redirectOn401: false,
         cache: 'no-store',
       });
-      setMessage('✅ Content generation started! Check the queue below.');
+      setMessage('Content generation started. Check the queue below.');
+      setMessageTone('success');
       setTopic('');
       setKeywords('');
       setTimeout(() => fetchJobs(), 2000);
-    } catch (error) {
-      console.error('Error generating content:', error);
-      setMessage('❌ Failed to start generation. Please try again.');
+    } catch (error: unknown) {
+      logger.error('Error generating content', error, { component: 'AIContentPage' });
+      setMessage('Failed to start generation. Please try again.');
+      setMessageTone('error');
     } finally {
       setLoading(false);
     }
@@ -230,7 +236,7 @@ export default function AIContentPage() {
             </div>
 
             {message && (
-              <div className={`p-3 rounded-lg text-sm ${message.includes('✅') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+              <div className={`p-3 rounded-lg text-sm ${messageTone === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                 {message}
               </div>
             )}
@@ -290,3 +296,4 @@ export default function AIContentPage() {
     </div>
   );
 }
+

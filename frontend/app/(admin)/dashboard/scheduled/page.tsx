@@ -1,10 +1,13 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { fetchAPI } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-utils';
 
 type ScheduledPost = {
   id: string;
@@ -17,6 +20,64 @@ type ScheduledPost = {
   tags: { name: string }[];
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseNumber = (value: unknown, fallback = 0): number => (
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
+
+const parseNameList = (value: unknown): { name: string }[] => (
+  Array.isArray(value)
+    ? value
+        .map((entry) => {
+          if (!isRecord(entry)) {
+            return null;
+          }
+          const name = parseString(entry.name);
+          return name ? { name } : null;
+        })
+        .filter((entry): entry is { name: string } => !!entry)
+    : []
+);
+
+const parseScheduledPost = (value: unknown): ScheduledPost | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  const scheduledFor = parseString(value.scheduledFor);
+  if (!id || !scheduledFor) {
+    return null;
+  }
+  const authorRaw = isRecord(value.author) ? value.author : {};
+  const author = {
+    username: parseString(authorRaw.username),
+    displayName: parseString(authorRaw.displayName),
+  };
+  return {
+    id,
+    title: parseString(value.title, 'Untitled'),
+    slug: parseString(value.slug),
+    scheduledFor,
+    status: parseString(value.status),
+    author,
+    categories: parseNameList(value.categories),
+    tags: parseNameList(value.tags),
+  };
+};
+
+const parseScheduledPosts = (value: unknown): ScheduledPost[] => (
+  Array.isArray(value)
+    ? value.map(parseScheduledPost).filter((post): post is ScheduledPost => !!post)
+    : []
+);
+
 export default function ScheduledPostsPage() {
   const { success, error: showError } = useToast();
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
@@ -27,13 +88,14 @@ export default function ScheduledPostsPage() {
     setLoading(true);
     try {
       const data = await fetchAPI('/blog/admin/scheduled', { redirectOn401: false, cache: 'no-store' });
-      setPosts(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error fetching scheduled posts:', error);
+      setPosts(parseScheduledPosts(data));
+    } catch (error: unknown) {
+      logger.error('Error fetching scheduled posts:', error);
+      showError(getErrorMessage(error, 'Failed to load scheduled posts'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     fetchScheduledPosts();
@@ -46,12 +108,18 @@ export default function ScheduledPostsPage() {
         method: 'POST',
         redirectOn401: false,
         cache: 'no-store',
-      }).catch(() => null);
-      success(`${(result as any) || 0} posts published!`);
+      });
+      let publishedCount = 0;
+      if (typeof result === 'number') {
+        publishedCount = result;
+      } else if (isRecord(result)) {
+        publishedCount = parseNumber(result.published ?? result.count ?? result.updated ?? result.processed);
+      }
+      success(`${publishedCount} posts published!`);
       fetchScheduledPosts();
-    } catch (error) {
-      console.error('Error processing scheduled posts:', error);
-      showError('Failed to process scheduled posts');
+    } catch (error: unknown) {
+      logger.error('Error processing scheduled posts:', error);
+      showError(getErrorMessage(error, 'Failed to process scheduled posts'));
     } finally {
       setProcessingScheduled(false);
     }
@@ -84,7 +152,7 @@ export default function ScheduledPostsPage() {
           </p>
         </div>
         <Button onClick={handleProcessScheduled} disabled={processingScheduled}>
-          {processingScheduled ? 'Publishing...' : '🚀 Publish Due Posts Now'}
+          {processingScheduled ? 'Publishing...' : 'Publish Due Posts Now'}
         </Button>
       </div>
 
@@ -230,13 +298,13 @@ export default function ScheduledPostsPage() {
         <CardContent className="pt-6">
           <div className="text-sm text-slate-600 dark:text-slate-400">
             <p className="mb-2">
-              <strong>⏰ Automatic Publishing:</strong> Posts are automatically published every 5 minutes by the backend cron job.
+              <strong>Automatic Publishing:</strong> Posts are automatically published every 5 minutes by the backend cron job.
             </p>
             <p className="mb-2">
-              <strong>🚀 Manual Publishing:</strong> Click "Publish Due Posts Now" to immediately publish all posts scheduled for the past.
+              <strong>Manual Publishing:</strong> Click "Publish Due Posts Now" to immediately publish all posts scheduled for the past.
             </p>
             <p>
-              <strong>✏️ Edit Scheduling:</strong> To change the scheduled time, click "Edit" on any post and update the "Schedule Publishing" field.
+              <strong>Edit Scheduling:</strong> To change the scheduled time, click "Edit" on any post and update the "Schedule Publishing" field.
             </p>
           </div>
         </CardContent>
@@ -244,3 +312,6 @@ export default function ScheduledPostsPage() {
     </div>
   );
 }
+
+
+

@@ -1,6 +1,9 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
+import type { DragEvent } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -9,6 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Save, ArrowLeft, Plus, Trash2, GripVertical, FileText, Globe } from 'lucide-react';
+import { getErrorMessage } from '@/lib/error-utils';
 
 type MenuLocations = {
   primary: boolean;
@@ -33,18 +37,19 @@ function buildPageUrl(slug?: string): string {
   return `/${slug}`;
 }
 
-function normalizeMenuLocations(locations: any, index: number): MenuLocations {
+function normalizeMenuLocations(locations: unknown, index: number): MenuLocations {
   if (locations && typeof locations === 'object') {
+    const locObj = locations as Record<string, unknown>;
     return {
-      primary: Boolean(locations.primary),
-      footer: Boolean(locations.footer),
+      primary: Boolean(locObj.primary),
+      footer: Boolean(locObj.footer),
     };
   }
   // Backward compatibility: default the first menu to primary.
   return { primary: index === 0, footer: false };
 }
 
-function normalizeMenus(rawMenus: any[] | undefined): Menu[] {
+function normalizeMenus(rawMenus: unknown): Menu[] {
   if (!Array.isArray(rawMenus) || rawMenus.length === 0) {
     return [
       {
@@ -56,12 +61,84 @@ function normalizeMenus(rawMenus: any[] | undefined): Menu[] {
     ];
   }
 
-  return rawMenus.map((menu, index) => ({
-    id: menu.id || `menu-${index}`,
-    name: menu.name || `Menu ${index + 1}`,
-    locations: normalizeMenuLocations(menu.locations, index),
-    items: Array.isArray(menu.items) ? menu.items : [],
-  }));
+  return rawMenus
+    .map((menu, index) => {
+      if (!menu || typeof menu !== 'object') return null;
+      const menuObj = menu as Record<string, unknown>;
+      const items = Array.isArray(menuObj.items)
+        ? menuObj.items.map((item, itemIndex) => parseMenuItem(item, itemIndex)).filter((item): item is MenuItem => item !== null)
+        : [];
+      return {
+        id: typeof menuObj.id === 'string' ? menuObj.id : `menu-${index}`,
+        name: typeof menuObj.name === 'string' ? menuObj.name : `Menu ${index + 1}`,
+        locations: normalizeMenuLocations(menuObj.locations, index),
+        items,
+      } satisfies Menu;
+    })
+    .filter((menu): menu is Menu => menu !== null);
+}
+
+function parseMenuItem(value: unknown, index: number): MenuItem | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  const type = obj.type === 'page' || obj.type === 'post' || obj.type === 'custom' ? obj.type : 'custom';
+  return {
+    id: typeof obj.id === 'string' ? obj.id : `item-${index}`,
+    type,
+    label: typeof obj.label === 'string' ? obj.label : 'Menu Item',
+    url: typeof obj.url === 'string' ? obj.url : '#',
+    pageId: typeof obj.pageId === 'string' ? obj.pageId : undefined,
+    postId: typeof obj.postId === 'string' ? obj.postId : undefined,
+    order: typeof obj.order === 'number' ? obj.order : index,
+  };
+}
+
+function parsePageSummary(value: unknown): PageSummary | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== 'string') return null;
+  return {
+    id: obj.id,
+    title: typeof obj.title === 'string' ? obj.title : undefined,
+    slug: typeof obj.slug === 'string' ? obj.slug : undefined,
+    status: typeof obj.status === 'string' ? obj.status : undefined,
+  };
+}
+
+function parsePostSummary(value: unknown): PostSummary | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== 'string') return null;
+  return {
+    id: obj.id,
+    title: typeof obj.title === 'string' ? obj.title : undefined,
+    slug: typeof obj.slug === 'string' ? obj.slug : undefined,
+    status: typeof obj.status === 'string' ? obj.status : undefined,
+  };
+}
+
+function extractPagesList(data: PagesResponse | PageSummary[] | null): PageSummary[] {
+  if (Array.isArray(data)) {
+    return data.map(parsePageSummary).filter((page): page is PageSummary => page !== null);
+  }
+  if (data && typeof data === 'object') {
+    const obj = data as PagesResponse;
+    const items = Array.isArray(obj.items) ? obj.items : Array.isArray(obj.pages) ? obj.pages : [];
+    return items.map(parsePageSummary).filter((page): page is PageSummary => page !== null);
+  }
+  return [];
+}
+
+function extractPostsList(data: PostsResponse | PostSummary[] | null): PostSummary[] {
+  if (Array.isArray(data)) {
+    return data.map(parsePostSummary).filter((post): post is PostSummary => post !== null);
+  }
+  if (data && typeof data === 'object') {
+    const obj = data as PostsResponse;
+    const items = Array.isArray(obj.items) ? obj.items : Array.isArray(obj.posts) ? obj.posts : [];
+    return items.map(parsePostSummary).filter((post): post is PostSummary => post !== null);
+  }
+  return [];
 }
 
 interface MenuItem {
@@ -81,17 +158,49 @@ interface Menu {
   items: MenuItem[];
 }
 
+type SettingsResponse = {
+  menuStructure?: {
+    menus?: unknown;
+  };
+};
+
+type PageSummary = {
+  id?: string;
+  title?: string;
+  slug?: string;
+  status?: string;
+};
+
+type PostSummary = {
+  id?: string;
+  title?: string;
+  slug?: string;
+  status?: string;
+};
+
+type PagesResponse = {
+  items?: unknown[];
+  pages?: unknown[];
+};
+
+type PostsResponse = {
+  items?: unknown[];
+  posts?: unknown[];
+};
+
 export default function MenuManagementPage() {
   const router = useRouter();
   const { success, error: showError } = useToast();
   const { dialog, confirm } = useConfirmDialog();
   const [menus, setMenus] = useState<Menu[]>([]);
-  const [pages, setPages] = useState<any[]>([]);
-  const [posts, setPosts] = useState<any[]>([]);
+  const [pages, setPages] = useState<PageSummary[]>([]);
+  const [posts, setPosts] = useState<PostSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [newMenuName, setNewMenuName] = useState('');
   const [editingMenu, setEditingMenu] = useState<Menu | null>(null);
+  const [dragState, setDragState] = useState<{ menuId: string; itemId: string } | null>(null);
+  const [dragOver, setDragOver] = useState<{ menuId: string; itemId: string } | null>(null);
   const [newItem, setNewItem] = useState<{
     type: MenuItem['type'];
     label: string;
@@ -102,109 +211,51 @@ export default function MenuManagementPage() {
 
   const loadData = useCallback(async () => {
     try {
-      console.log('🔍 Loading menu data...');
+      logger.debug('Loading menu data');
       const [settingsData, pagesData, postsData] = await Promise.all([
-        fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' }),
-        fetchAPI('/pages?status=PUBLISHED', { redirectOn401: false, cache: 'no-store' }).catch((err) => {
-          console.warn('⚠️ Failed to fetch pages from protected endpoint, trying public:', err);
-          // Fallback to public endpoint if protected fails
-          return fetchAPI('/pages/public', { redirectOn401: false, cache: 'no-store' });
+        fetchAPI<SettingsResponse>('/settings', { redirectOn401: false, cache: 'no-store' }),
+        fetchAPI<PagesResponse | PageSummary[]>(
+          '/pages?status=PUBLISHED',
+          { redirectOn401: false, cache: 'no-store' },
+        ).catch((err: unknown) => {
+          logger.warn('Failed to fetch pages from protected endpoint, trying public', { error: getErrorMessage(err) });
+          return fetchAPI<PagesResponse | PageSummary[]>(
+            '/pages/public',
+            { redirectOn401: false, cache: 'no-store' },
+          );
         }),
-        fetchAPI('/blog/admin/posts?status=PUBLISHED&take=100', { redirectOn401: false, cache: 'no-store' }) // Use admin endpoint for authenticated users
+        fetchAPI<PostsResponse | PostSummary[]>(
+          '/blog/admin/posts?status=PUBLISHED&take=100',
+          { redirectOn401: false, cache: 'no-store' },
+        )
       ]);
-
-      console.log('📦 Settings data:', settingsData ? 'received' : 'null');
-      console.log('📦 Pages data type:', typeof pagesData, 'Is Array:', Array.isArray(pagesData));
-      console.log('📦 Pages data:', pagesData);
 
       setMenus(normalizeMenus(settingsData?.menuStructure?.menus));
 
-      // Handle pages data - same pattern as dashboard/pages/page.tsx
-      let pagesList: any[] = [];
-      if (Array.isArray(pagesData)) {
-        pagesList = pagesData;
-        console.log('✅ Received pages as array:', pagesList.length, 'items');
-      } else if (pagesData?.items && Array.isArray(pagesData.items)) {
-        pagesList = pagesData.items;
-        console.log('✅ Received pages as object.items:', pagesList.length, 'items');
-      } else if (pagesData?.pages && Array.isArray(pagesData.pages)) {
-        pagesList = pagesData.pages;
-        console.log('✅ Received pages as object.pages:', pagesList.length, 'items');
-      } else {
-        console.warn('⚠️ Unexpected pages data format:', pagesData ? Object.keys(pagesData) : 'null/undefined');
-      }
-      
-      // Filter to only published pages (though API should already filter)
-      const publishedPages = pagesList.filter((page: any) => {
-        if (!page) return false;
-        const isPublished = page.status === 'PUBLISHED';
-        if (!isPublished) {
-          console.log('⏭️ Skipping non-published page:', page.title, 'status:', page.status);
-        }
-        if (RESERVED_SLUGS.has(page.slug)) {
-          console.log('Skipping reserved page slug:', page.slug);
-          return false;
-        }
-        return isPublished;
+      const pagesList = extractPagesList(pagesData);
+      const publishedPages = pagesList.filter((page) => {
+        if (!page.slug) return false;
+        if (RESERVED_SLUGS.has(page.slug)) return false;
+        return page.status === 'PUBLISHED';
       });
-      console.log(`✅ Loaded ${publishedPages.length} published pages for menu (out of ${pagesList.length} total)`);
-      if (publishedPages.length > 0) {
-        console.log('📄 Page titles:', publishedPages.map((p: any) => p.title));
-      } else {
-        console.warn('⚠️ No published pages found. Check if pages exist in database and are published.');
-      }
+      logger.debug('Loaded pages for menu', { published: publishedPages.length, total: pagesList.length });
       setPages(publishedPages);
-      
-      // Handle posts data
-      let postsList: any[] = [];
-      if (Array.isArray(postsData)) {
-        postsList = postsData;
-        console.log('✅ Received posts as array:', postsList.length, 'items');
-      } else if (postsData?.items && Array.isArray(postsData.items)) {
-        postsList = postsData.items;
-        console.log('✅ Received posts as object.items:', postsList.length, 'items');
-      } else if (postsData?.posts && Array.isArray(postsData.posts)) {
-        postsList = postsData.posts;
-        console.log('✅ Received posts as object.posts:', postsList.length, 'items');
-      } else {
-        console.warn('⚠️ Unexpected posts data format:', postsData ? Object.keys(postsData) : 'null/undefined');
-      }
-      
-      // Filter to only published posts (though API should already filter)
-      const publishedPosts = postsList.filter((post: any) => {
-        if (!post) return false;
-        const isPublished = post.status === 'PUBLISHED';
-        if (!isPublished) {
-          console.log('⏭️ Skipping non-published post:', post.title, 'status:', post.status);
-        }
-        return isPublished;
-      });
-      
-      console.log(`✅ Loaded ${publishedPosts.length} published posts for menu (out of ${postsList.length} total)`);
-      if (publishedPosts.length > 0) {
-        console.log('📝 Post titles:', publishedPosts.map((p: any) => p.title).slice(0, 5));
-      } else {
-        console.warn('⚠️ No published posts found. Check if posts exist in database and are published.');
-      }
+
+      const postsList = extractPostsList(postsData);
+      const publishedPosts = postsList.filter((post) => post.status === 'PUBLISHED');
+      logger.debug('Loaded posts for menu', { published: publishedPosts.length, total: postsList.length });
       setPosts(publishedPosts);
-    } catch (e: any) {
-      console.error('❌ Error loading menu data:', e);
-      console.error('Error details:', {
-        message: e.message,
-        stack: e.stack,
-        name: e.name
-      });
-      
-      // Check if it's an auth error
-      if (e.message?.includes('401') || e.message?.includes('403') || e.message?.includes('Unauthorized')) {
-        console.error('🔒 Authentication error');
+    } catch (e: unknown) {
+      logger.error('Error loading menu data', e, { component: 'MenuManagementPage' });
+      const message = getErrorMessage(e, 'Failed to load data');
+      if (message.includes('401') || message.includes('403') || message.includes('Unauthorized')) {
+        logger.warn('Authentication error while loading menu data', { component: 'MenuManagementPage' });
       }
-      
-      showError(e.message || 'Failed to load data');
+      showError(message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     loadData();
@@ -219,8 +270,9 @@ export default function MenuManagementPage() {
         cache: 'no-store',
       });
       success('Menu structure saved successfully!');
-    } catch (e: any) {
-      showError(e.message || 'Failed to save menu structure');
+    } catch (e: unknown) {
+      logger.error('Failed to save menu structure', e, { component: 'MenuManagementPage' });
+      showError(getErrorMessage(e, 'Failed to save menu structure'));
     }
   }
 
@@ -287,6 +339,69 @@ export default function MenuManagementPage() {
         setMenus(menus.filter(m => m.id !== menuId));
       }
     );
+  }
+
+  function moveMenuItem(menuId: string, fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return;
+    const nextMenus = menus.map((menu) => {
+      if (menu.id !== menuId) return menu;
+      const items = [...menu.items];
+      const [moved] = items.splice(fromIndex, 1);
+      items.splice(toIndex, 0, moved);
+      const reordered = items.map((item, index) => ({ ...item, order: index }));
+      return { ...menu, items: reordered };
+    });
+    setMenus(nextMenus);
+  }
+
+  function handleDragStart(menuId: string, itemId: string) {
+    return (event: DragEvent<HTMLDivElement>) => {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', itemId);
+      setDragState({ menuId, itemId });
+    };
+  }
+
+  function handleDragOver(menuId: string, itemId: string) {
+    return (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (!dragState || dragState.menuId !== menuId) return;
+      setDragOver({ menuId, itemId });
+    };
+  }
+
+  function handleDrop(menuId: string, itemId: string) {
+    return (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (!dragState || dragState.menuId !== menuId) return;
+      const menu = menus.find((m) => m.id === menuId);
+      if (!menu) return;
+      const fromIndex = menu.items.findIndex((item) => item.id === dragState.itemId);
+      const toIndex = menu.items.findIndex((item) => item.id === itemId);
+      if (fromIndex === -1 || toIndex === -1) return;
+      moveMenuItem(menuId, fromIndex, toIndex);
+      setDragState(null);
+      setDragOver(null);
+    };
+  }
+
+  function handleDropToEnd(menuId: string) {
+    return (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (!dragState || dragState.menuId !== menuId) return;
+      const menu = menus.find((m) => m.id === menuId);
+      if (!menu) return;
+      const fromIndex = menu.items.findIndex((item) => item.id === dragState.itemId);
+      if (fromIndex === -1) return;
+      moveMenuItem(menuId, fromIndex, menu.items.length);
+      setDragState(null);
+      setDragOver(null);
+    };
+  }
+
+  function handleDragEnd() {
+    setDragState(null);
+    setDragOver(null);
   }
 
   if (loading) return <div className="p-8 text-center text-slate-500">Loading...</div>;
@@ -401,7 +516,12 @@ export default function MenuManagementPage() {
                     <label className="text-sm font-medium mb-1 block">Item Type</label>
                     <select
                       value={newItem.type}
-                      onChange={(e) => setNewItem({...newItem, type: e.target.value as any, url: '', pageId: '', postId: ''})}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === 'custom' || value === 'page' || value === 'post') {
+                          setNewItem({ ...newItem, type: value, url: '', pageId: '', postId: '' });
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800"
                     >
                       <option value="custom">Custom Link</option>
@@ -474,30 +594,55 @@ export default function MenuManagementPage() {
             )}
 
             <div className="space-y-2">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Drag and drop items to set priority, WordPress-style.
+              </div>
               {menu.items.length === 0 ? (
                 <p className="text-sm text-slate-500 text-center py-4">No menu items yet. Click "Add Item" to get started.</p>
               ) : (
-                menu.items.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <GripVertical className="text-slate-400 cursor-move" size={20} />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        {item.type === 'page' && <FileText size={14} className="text-blue-500" />}
-                        {item.type === 'post' && <FileText size={14} className="text-green-500" />}
-                        {item.type === 'custom' && <Globe size={14} className="text-purple-500" />}
-                        <span className="font-medium">{item.label}</span>
-                        <span className="text-xs text-slate-500">({item.url})</span>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeMenuItem(menu.id, item.id)}
+                <>
+                  {menu.items.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                        dragOver?.menuId === menu.id && dragOver?.itemId === item.id
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800'
+                      }`}
+                      draggable
+                      onDragStart={handleDragStart(menu.id, item.id)}
+                      onDragOver={handleDragOver(menu.id, item.id)}
+                      onDrop={handleDrop(menu.id, item.id)}
+                      onDragEnd={handleDragEnd}
                     >
-                      <Trash2 size={14} />
-                    </Button>
+                      <GripVertical className="text-slate-400 cursor-move" size={20} />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          {item.type === 'page' && <FileText size={14} className="text-blue-500" />}
+                          {item.type === 'post' && <FileText size={14} className="text-green-500" />}
+                          {item.type === 'custom' && <Globe size={14} className="text-purple-500" />}
+                          <span className="font-medium">{item.label}</span>
+                          <span className="text-xs text-slate-500">({item.url})</span>
+                        </div>
+                      </div>
+                      <span className="text-xs text-slate-400">#{index + 1}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeMenuItem(menu.id, item.id)}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  ))}
+                  <div
+                    className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-3 text-xs text-slate-500 text-center"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={handleDropToEnd(menu.id)}
+                  >
+                    Drop here to move item to the end
                   </div>
-                ))
+                </>
               )}
             </div>
           </CardContent>
@@ -508,3 +653,7 @@ export default function MenuManagementPage() {
     </div>
   );
 }
+
+
+
+

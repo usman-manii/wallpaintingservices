@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { SafeHtml } from '@/components/SafeHtml';
 import { 
   Bold, 
   Italic, 
@@ -32,6 +33,12 @@ export default function TextWidget({
   useEffect(() => {
     if (onChange) {
       onChange(localContent);
+    }
+  }, [localContent]);
+
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== localContent) {
+      editorRef.current.innerHTML = localContent;
     }
   }, [localContent]);
 
@@ -180,7 +187,6 @@ export default function TextWidget({
             contentEditable
             onInput={handleContentChange}
             onBlur={handleContentChange}
-            dangerouslySetInnerHTML={{ __html: localContent }}
             className="min-h-[200px] p-4 border-2 border-slate-300 dark:border-slate-600 rounded-lg 
                      bg-white dark:bg-slate-800 text-slate-900 dark:text-white
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
@@ -200,10 +206,5 @@ export default function TextWidget({
   }
 
   // Display mode
-  return (
-    <div
-      className="prose prose-slate dark:prose-invert max-w-none"
-      dangerouslySetInnerHTML={{ __html: localContent }}
-    />
-  );
+  return <SafeHtml html={localContent} as="div" className="prose prose-slate dark:prose-invert max-w-none" />;
 }

@@ -1,4 +1,5 @@
 // API Response Types
+import type { JsonValue } from '@/types/json';
 export interface User {
   id: string;
   username: string;
@@ -59,14 +60,14 @@ export interface Page {
   title: string;
   slug: string;
   description?: string;
-  content: any;
+  content: JsonValue;
   status: 'DRAFT' | 'PUBLISHED' | 'SCHEDULED' | 'ARCHIVED';
   pageType: 'STATIC' | 'DYNAMIC' | 'LANDING' | 'POLICY' | 'BLOG_TEMPLATE';
   createdAt: string;
   updatedAt: string;
 }
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   data?: T;
   message?: string;
   error?: string;

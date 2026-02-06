@@ -1,6 +1,8 @@
 // frontend/app/(admin)/dashboard/cron-jobs/page.tsx
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useEffect, useState, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -10,6 +12,7 @@ import { fetchAPI } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { LoadingSpinner, LoadingSkeleton } from '@/components/ui/LoadingSpinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import type { LucideIcon } from 'lucide-react';
 import { 
   Clock, 
   Play, 
@@ -26,6 +29,7 @@ import {
   Activity,
   Link as LinkIcon
 } from 'lucide-react';
+import { getErrorMessage } from '@/lib/error-utils';
 
 interface CronJob {
   id: string;
@@ -39,7 +43,78 @@ interface CronJob {
   nextRun: string;
 }
 
-const categoryIcons: Record<string, any> = {
+function parseCronJobs(value: unknown): CronJob[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const obj = item as Record<string, unknown>;
+      if (typeof obj.id !== 'string' || typeof obj.name !== 'string') return null;
+      return {
+        id: obj.id,
+        name: obj.name,
+        category: typeof obj.category === 'string' ? obj.category : 'GENERAL',
+        schedule: typeof obj.schedule === 'string' ? obj.schedule : '',
+        cronExpression: typeof obj.cronExpression === 'string' ? obj.cronExpression : '',
+        description: typeof obj.description === 'string' ? obj.description : '',
+        status: obj.status === 'active' || obj.status === 'planned' || obj.status === 'disabled' ? obj.status : 'planned',
+        lastRun: typeof obj.lastRun === 'string' ? obj.lastRun : null,
+        nextRun: typeof obj.nextRun === 'string' ? obj.nextRun : '',
+      };
+    })
+    .filter((job): job is CronJob => job !== null);
+}
+
+function parseSitemapStats(value: unknown): SitemapStats | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  return {
+    totalUrls: typeof obj.totalUrls === 'number' ? obj.totalUrls : undefined,
+    blogPosts: typeof obj.blogPosts === 'number' ? obj.blogPosts : undefined,
+    categories: typeof obj.categories === 'number' ? obj.categories : undefined,
+    tags: typeof obj.tags === 'number' ? obj.tags : undefined,
+    baseUrl: typeof obj.baseUrl === 'string' ? obj.baseUrl : undefined,
+    lastGenerated: typeof obj.lastGenerated === 'string' ? obj.lastGenerated : undefined,
+  };
+}
+
+function parseInterlinkingStats(value: unknown): InterlinkingStats | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  const settingsObj = obj.settings && typeof obj.settings === 'object' ? (obj.settings as Record<string, unknown>) : null;
+  return {
+    totalLinks: typeof obj.totalLinks === 'number' ? obj.totalLinks : undefined,
+    pendingPosts: typeof obj.pendingPosts === 'number' ? obj.pendingPosts : undefined,
+    avgLinksPerPost: typeof obj.avgLinksPerPost === 'number' ? obj.avgLinksPerPost : undefined,
+    settings: settingsObj ? { enabled: typeof settingsObj.enabled === 'boolean' ? settingsObj.enabled : undefined } : undefined,
+  };
+}
+
+function parseSitemapGenerate(value: unknown): { totalUrls: number } {
+  if (!value || typeof value !== 'object') return { totalUrls: 0 };
+  const obj = value as Record<string, unknown>;
+  const stats = obj.stats && typeof obj.stats === 'object' ? (obj.stats as Record<string, unknown>) : null;
+  const total = stats && typeof stats.totalUrls === 'number' ? stats.totalUrls : 0;
+  return { totalUrls: total };
+}
+
+type SitemapStats = {
+  totalUrls?: number;
+  blogPosts?: number;
+  categories?: number;
+  tags?: number;
+  baseUrl?: string;
+  lastGenerated?: string;
+};
+
+type InterlinkingStats = {
+  totalLinks?: number;
+  pendingPosts?: number;
+  avgLinksPerPost?: number;
+  settings?: { enabled?: boolean };
+};
+
+const categoryIcons: Record<string, LucideIcon> = {
   BLOG: Calendar,
   SEO: Search,
   DATABASE: Database,
@@ -59,17 +134,17 @@ export default function CronJobsPage() {
   const { success, error: showError } = useToast();
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sitemapStats, setSitemapStats] = useState<any>(null);
-  const [interlinkingStats, setInterlinkingStats] = useState<any>(null);
+  const [sitemapStats, setSitemapStats] = useState<SitemapStats | null>(null);
+  const [interlinkingStats, setInterlinkingStats] = useState<InterlinkingStats | null>(null);
   const [triggering, setTriggering] = useState<string | null>(null);
 
   const fetchCronJobs = useCallback(async () => {
     try {
       const data = await fetchAPI('/tasks/cron-jobs', { redirectOn401: false, cache: 'no-store' });
-      setCronJobs(Array.isArray(data) ? data : []);
-    } catch (error: any) {
-      console.error('Error fetching cron jobs:', error);
-      showError(error.message || 'Failed to fetch cron jobs');
+      setCronJobs(parseCronJobs(data));
+    } catch (error: unknown) {
+      logger.error('Error fetching cron jobs', error, { component: 'CronJobsPage' });
+      showError(getErrorMessage(error, 'Failed to fetch cron jobs'));
     } finally {
       setLoading(false);
     }
@@ -78,18 +153,18 @@ export default function CronJobsPage() {
   const fetchSitemapStats = useCallback(async () => {
     try {
       const data = await fetchAPI('/tasks/sitemap/stats', { redirectOn401: false, cache: 'no-store' });
-      setSitemapStats(data || {});
-    } catch (error: any) {
-      console.error('Error fetching sitemap stats:', error);
+      setSitemapStats(parseSitemapStats(data));
+    } catch (error: unknown) {
+      logger.error('Error fetching sitemap stats', error, { component: 'CronJobsPage' });
     }
   }, []);
 
   const fetchInterlinkingStats = useCallback(async () => {
     try {
       const data = await fetchAPI('/blog/ai/interlink/stats', { redirectOn401: false, cache: 'no-store' });
-      setInterlinkingStats(data || {});
-    } catch (error: any) {
-      console.error('Error fetching interlinking stats:', error);
+      setInterlinkingStats(parseInterlinkingStats(data));
+    } catch (error: unknown) {
+      logger.error('Error fetching interlinking stats', error, { component: 'CronJobsPage' });
     }
   }, []);
 
@@ -106,9 +181,9 @@ export default function CronJobsPage() {
       await fetchAPI(`/tasks/trigger/${endpoint}`, { method: 'POST', redirectOn401: false, cache: 'no-store' });
       success('Job triggered successfully! Check server logs for results.');
       fetchCronJobs();
-    } catch (error: any) {
-      console.error('Error triggering job:', error);
-      showError(error.message || 'Error triggering job');
+    } catch (error: unknown) {
+      logger.error('Error triggering job', error, { component: 'CronJobsPage', jobId });
+      showError(getErrorMessage(error, 'Error triggering job'));
     } finally {
       setTriggering(null);
     }
@@ -118,11 +193,12 @@ export default function CronJobsPage() {
     setTriggering('sitemap');
     try {
       const data = await fetchAPI('/tasks/sitemap/generate', { method: 'POST', redirectOn401: false, cache: 'no-store' });
-      success(`Sitemap generated! ${data?.stats?.totalUrls || 0} URLs included.`);
+      const stats = parseSitemapGenerate(data);
+      success(`Sitemap generated! ${stats.totalUrls} URLs included.`);
       fetchSitemapStats();
-    } catch (error: any) {
-      console.error('Error generating sitemap:', error);
-      showError(error.message || 'Error generating sitemap');
+    } catch (error: unknown) {
+      logger.error('Error generating sitemap', error, { component: 'CronJobsPage' });
+      showError(getErrorMessage(error, 'Error generating sitemap'));
     } finally {
       setTriggering(null);
     }
@@ -139,6 +215,12 @@ export default function CronJobsPage() {
     if (diffMins < 60) return `In ${diffMins} minutes`;
     if (diffHours < 24) return `In ${diffHours} hours`;
     return `In ${diffDays} days`;
+  };
+
+  const formatLastRun = (lastRun: string | null) => {
+    if (!lastRun) return 'Never';
+    const date = new Date(lastRun);
+    return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
   };
 
   const groupedJobs = cronJobs.reduce((acc, job) => {
@@ -255,19 +337,19 @@ export default function CronJobsPage() {
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Total URLs</p>
-                <p className="text-xl font-bold text-foreground">{sitemapStats.totalUrls}</p>
+                <p className="text-xl font-bold text-foreground">{sitemapStats.totalUrls ?? 0}</p>
               </div>
               <div>
                 <p className="text-sm text-slate-600 dark:text-slate-400">Blog Posts</p>
-                <p className="text-xl font-bold text-blue-600">{sitemapStats.blogPosts}</p>
+                <p className="text-xl font-bold text-blue-600">{sitemapStats.blogPosts ?? 0}</p>
               </div>
               <div>
                 <p className="text-sm text-slate-600 dark:text-slate-400">Categories</p>
-                <p className="text-xl font-bold text-purple-600">{sitemapStats.categories}</p>
+                <p className="text-xl font-bold text-purple-600">{sitemapStats.categories ?? 0}</p>
               </div>
               <div>
                 <p className="text-sm text-slate-600 dark:text-slate-400">Tags</p>
-                <p className="text-xl font-bold text-pink-600">{sitemapStats.tags}</p>
+                <p className="text-xl font-bold text-pink-600">{sitemapStats.tags ?? 0}</p>
               </div>
               <div>
                 <Tooltip content="Manually regenerate sitemap with latest content">
@@ -292,7 +374,7 @@ export default function CronJobsPage() {
               </div>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-500 mt-4">
-              Base URL: {sitemapStats.baseUrl} | Last generated: {new Date(sitemapStats.lastGenerated).toLocaleString()}
+              Base URL: {sitemapStats.baseUrl || 'N/A'} | Last generated: {sitemapStats.lastGenerated ? new Date(sitemapStats.lastGenerated).toLocaleString() : 'N/A'}
             </p>
           </CardContent>
         </Card>
@@ -312,16 +394,16 @@ export default function CronJobsPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
                 <div className="text-sm text-slate-500 mb-1">Total Links</div>
-                <div className="text-2xl font-bold">{interlinkingStats.totalLinks}</div>
+                <div className="text-2xl font-bold">{interlinkingStats.totalLinks ?? 0}</div>
               </div>
               <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
                 <div className="text-sm text-slate-500 mb-1">Pending Posts</div>
-                <div className="text-2xl font-bold text-orange-600">{interlinkingStats.pendingPosts}</div>
+                <div className="text-2xl font-bold text-orange-600">{interlinkingStats.pendingPosts ?? 0}</div>
                 <div className="text-xs text-slate-400">Needs interlinking</div>
               </div>
               <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
                  <div className="text-sm text-slate-500 mb-1">Avg Links/Post</div>
-                 <div className="text-2xl font-bold">{interlinkingStats.avgLinksPerPost}</div>
+                 <div className="text-2xl font-bold">{interlinkingStats.avgLinksPerPost ?? 0}</div>
               </div>
               <div className="flex items-center justify-center">
                  <Button 
@@ -398,6 +480,10 @@ export default function CronJobsPage() {
                             <TrendingUp className="w-3 h-3" />
                             Next run: {formatNextRun(job.nextRun)}
                           </span>
+                          <span className="flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Last run: {formatLastRun(job.lastRun)}
+                          </span>
                           <span>Cron: {job.cronExpression}</span>
                         </div>
                       </div>
@@ -448,7 +534,7 @@ export default function CronJobsPage() {
                 You can manually trigger active jobs using the "Trigger Now" button for testing or immediate execution.
               </p>
               <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                <strong>⚠️ Note:</strong> Manually triggering jobs does not affect their scheduled execution. 
+                <strong>Note:</strong> Manually triggering jobs does not affect their scheduled execution. 
                 They will continue to run automatically at their designated times.
               </p>
             </div>
@@ -458,3 +544,5 @@ export default function CronJobsPage() {
     </div>
   );
 }
+
+

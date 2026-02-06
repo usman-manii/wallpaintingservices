@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Public } from '../auth/public.decorator';
+import { Prisma } from '@prisma/client';
 
 @Controller('categories')
 export class CategoryController {
@@ -51,10 +52,11 @@ export class CategoryController {
     },
   ) {
     const { parentId, ...rest } = body;
-    return this.categoryService.createCategory({
+    const data: Prisma.CategoryCreateInput = {
       ...rest,
       ...(parentId ? { parent: { connect: { id: parentId } } } : {}),
-    } as any);
+    };
+    return this.categoryService.createCategory(data);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -75,7 +77,7 @@ export class CategoryController {
     },
   ) {
     const { parentId, ...rest } = body;
-    const data: any = { ...rest };
+    const data: Prisma.CategoryUpdateInput = { ...rest };
 
     if (parentId !== undefined) {
       data.parent = parentId

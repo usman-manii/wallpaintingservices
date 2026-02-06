@@ -4,6 +4,22 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
+
+type SEOEnhancementResult = {
+  total: number;
+  updated: number;
+  failed: number;
+  details: Array<{ id: string; title: string; fieldsUpdated: string[] }>;
+};
+
+const getErrorMessage = (error: unknown): string => (
+  error instanceof Error ? error.message : String(error)
+);
+
+const getErrorStack = (error: unknown): string | undefined => (
+  error instanceof Error ? error.stack : undefined
+);
 
 @Controller('blog/seo')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -18,7 +34,7 @@ export class BlogSEOController {
   @Post('enhance-all')
   @Roles('ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR')
   async enhanceAllPosts() {
-    this.logger.log('🚀 Starting bulk SEO enhancement...');
+    this.logger.log('[SEO] Starting bulk SEO enhancement...');
 
     const posts = await this.prisma.post.findMany({
       where: {
@@ -33,16 +49,16 @@ export class BlogSEOController {
       include: { tags: true, categories: true },
     });
 
-    const results = {
+    const results: SEOEnhancementResult = {
       total: posts.length,
       updated: 0,
       failed: 0,
-      details: [] as any[],
+      details: [],
     };
 
     for (const post of posts) {
       try {
-        const updates: any = {};
+        const updates: Prisma.PostUpdateInput = {};
 
         // Generate SEO Title
         if (!post.seoTitle) {
@@ -92,11 +108,14 @@ export class BlogSEOController {
         }
       } catch (error) {
         results.failed++;
-        this.logger.error(`Failed to enhance post ${post.id}:`, error);
+        this.logger.error(
+          `Failed to enhance post ${post.id}: ${getErrorMessage(error)}`,
+          getErrorStack(error),
+        );
       }
     }
 
-    this.logger.log(`✅ Bulk enhancement complete: ${results.updated} updated, ${results.failed} failed`);
+    this.logger.log(`[SEO] Bulk enhancement complete: ${results.updated} updated, ${results.failed} failed`);
     return results;
   }
 
@@ -115,7 +134,7 @@ export class BlogSEOController {
       throw new Error('Post not found');
     }
 
-    const updates: any = {};
+    const updates: Prisma.PostUpdateInput = {};
 
     if (!post.seoTitle) {
       updates.seoTitle = this.generateSEOTitle(post.title);
@@ -164,7 +183,7 @@ export class BlogSEOController {
   @Roles('ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR')
   async getStats() {
     const total = await this.prisma.post.count();
-    
+
     const missing = {
       seoTitle: await this.prisma.post.count({ where: { seoTitle: null } }),
       seoDescription: await this.prisma.post.count({ where: { seoDescription: null } }),
@@ -211,17 +230,17 @@ export class BlogSEOController {
     }
 
     const plainText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    
+
     if (plainText.length > 155) {
       return plainText.substring(0, 155) + '...';
     }
-    
+
     return plainText + ' Learn more in this comprehensive guide.';
   }
 
   private generateExcerpt(content: string): string {
     const plainText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    
+
     const firstSentence = plainText.match(/^[^.!?]+[.!?]/)?.[0];
     if (firstSentence && firstSentence.length >= 100 && firstSentence.length <= 200) {
       return firstSentence.trim();
@@ -232,12 +251,12 @@ export class BlogSEOController {
 
   private extractKeywords(content: string, title: string, existingTags: string[]): string[] {
     const plainText = (content + ' ' + title).toLowerCase().replace(/<[^>]*>/g, ' ');
-    
+
     const words = plainText.match(/\b\w{4,}\b/g) || [];
-    
+
     const frequency: { [key: string]: number } = {};
     const stopWords = ['this', 'that', 'with', 'from', 'have', 'will', 'your', 'they', 'been', 'more', 'when', 'them', 'some', 'than', 'very', 'just', 'into', 'also', 'only', 'over', 'such', 'even', 'most', 'made'];
-    
+
     words.forEach(word => {
       if (!stopWords.includes(word)) {
         frequency[word] = (frequency[word] || 0) + 1;

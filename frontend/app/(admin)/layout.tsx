@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import AdminSidebar from '@/components/AdminSidebar';
 import AdminNavbar from '@/components/AdminNavbar';
 import { ThemeProvider } from '@/contexts/ThemeContext';
@@ -53,16 +55,16 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     // Redirect unauthenticated users to login
     if (!role || !user) {
       hasRedirectedRef.current = true;
-      console.debug('[AdminLayout] No auth detected, redirecting to login');
+      logger.debug('[AdminLayout] No auth detected, redirecting to login');
       const returnTo = pathname && pathname !== '/dashboard' ? pathname : '/dashboard';
-      router.replace(`/auth?next=${encodeURIComponent(returnTo)}`);
+      router.replace(`/login?next=${encodeURIComponent(returnTo)}`);
       return;
     }
 
     // Redirect non-admin users to profile
     if (!isAdminRole) {
       hasRedirectedRef.current = true;
-      console.debug('[AdminLayout] Non-admin user detected, redirecting to profile');
+      logger.debug('[AdminLayout] Non-admin user detected, redirecting to profile');
       router.replace('/profile');
       return;
     }
@@ -135,3 +137,4 @@ export default function AdminLayout({
     </ThemeProvider>
   );
 }
+

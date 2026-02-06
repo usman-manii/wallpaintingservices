@@ -36,6 +36,48 @@ enum JobStatus {
   FAILED
 }
 
+enum NotificationCategory {
+  ALERT
+  CAMPAIGN
+  GREETING
+  UPDATE
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  BROWSER
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  SYSTEM
+  SECURITY
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum NotificationStatus {
+  DRAFT
+  SCHEDULED
+  SENT
+  ARCHIVED
+}
+
+enum NotificationAudience {
+  ALL
+  ROLE
+  USER
+}
+
 model User {
   id       String @id @default(uuid())
   username String @unique // Unchangeable username
@@ -57,6 +99,7 @@ model User {
   countryCode     String?
   isPhoneVerified Boolean @default(false)
   isEmailVerified Boolean @default(false)
+  emailVerifiedAt DateTime?
   website         String?
   facebook        String?
   twitter         String?
@@ -76,6 +119,10 @@ model User {
   emailChangeRequests EmailChangeRequest[]
   pages               Page[]
   media               Media[]
+  notificationsCreated   Notification[]         @relation("NotificationCreator")
+  notificationRecipients NotificationRecipient[]
+  sessions               UserSession[]
+  emailVerificationTokens EmailVerificationToken[]
 }
 
 model EmailChangeRequest {
@@ -289,6 +336,86 @@ model Comment {
   @@index([parentId])
 }
 
+model Notification {
+  id          String @id @default(uuid())
+  title       String
+  message     String @db.Text
+  category    NotificationCategory @default(ALERT)
+  type        NotificationType @default(INFO)
+  priority    NotificationPriority @default(NORMAL)
+  status      NotificationStatus @default(DRAFT)
+  audience    NotificationAudience @default(ALL)
+  channels    NotificationChannel[] @default([IN_APP])
+  targetRoles Role[] @default([])
+  targetUserIds String[] @default([])
+  actionLabel String?
+  actionUrl   String?
+  isSticky    Boolean @default(false)
+  sendAt      DateTime?
+  expiresAt   DateTime?
+
+  createdById String
+  createdBy   User @relation("NotificationCreator", fields: [createdById], references: [id])
+
+  recipients  NotificationRecipient[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, sendAt])
+  @@index([audience])
+  @@index([type, priority])
+  @@index([category])
+}
+
+model NotificationRecipient {
+  id             String @id @default(uuid())
+  notificationId String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  deliveredAt DateTime?
+  readAt      DateTime?
+  dismissedAt DateTime?
+  archivedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([notificationId, userId])
+  @@index([userId, readAt])
+  @@index([notificationId])
+}
+
+model UserSession {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String  @unique
+  userAgent       String?
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  expiresAt       DateTime
+
+  @@index([userId, revokedAt])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  codeHash  String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
 // Internal Link Management for SEO
 model InternalLink {
   id            String  @id @default(uuid())
@@ -333,6 +460,10 @@ model SiteSettings {
   menuStructure      Json?    // Site menu structure: { menus: [{ name, items: [{ type, label, url, pageId, postId }] }] }
   widgetConfig       Json?    // Sidebar widget configuration: { widgets: [{ type, enabled, settings }] }
   appearanceSettings Json?    // Color scheme, fonts, typography: { colors: { primary, secondary }, fonts: { heading, body }, typography: { ... } }
+  cookieConsentEnabled Boolean @default(true)
+  cookieConsentConfig Json?
+  notificationConfig Json?
+  sitemapConfig      Json?
   
   // Site Ownership Verification (META TAG CONTENT ONLY - not full HTML tags)
   googleSiteVerification String? // Google Search Console: content="..." value only
@@ -354,6 +485,9 @@ model SiteSettings {
   aiMaxWordCount         Int     @default(5000) // Maximum words per AI post
   aiAutoApprove          Boolean @default(false) // Auto-approve AI posts (dangerous!)
   aiGenerationSchedule   String  @default("0 2 * * *") // Cron: Daily at 2 AM
+  aiMode                 String  @default("standard") // standard, go, god
+  aiLearningLevel        Int     @default(3) // 1-7 depth
+  aiSelfLearningEnabled  Boolean @default(false)
   
   // Content Strategy
   siteKeywords           String[] @default([]) // Core keywords for AI content

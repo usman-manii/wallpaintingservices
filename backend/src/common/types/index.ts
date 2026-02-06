@@ -4,6 +4,7 @@ import { Request } from 'express';
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
+    userId?: string;
     email: string;
     role: string;
     capabilities?: string[];
@@ -27,7 +28,7 @@ export interface FilterParams {
   endDate?: Date;
 }
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   data?: T;
   message?: string;
   error?: string;

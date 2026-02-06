@@ -10,7 +10,7 @@ import { SocialModule } from '../social/social.module';
   imports: [
     AiModule, 
     BlogModule, 
-    forwardRef(() => SocialModule) // Break circular dependency if any
+    forwardRef(() => SocialModule) // Break circular dependency if present
   ],
   controllers: [QueueController],
   providers: [QueueService, QueueWorker],

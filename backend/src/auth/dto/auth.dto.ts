@@ -1,6 +1,5 @@
 
-import { IsEmail, IsNotEmpty, MinLength, IsOptional, IsEnum } from 'class-validator';
-import { Role } from '@prisma/client';
+import { IsEmail, IsNotEmpty, MinLength, IsOptional } from 'class-validator';
 
 export class LoginDto {
   @IsEmail()
@@ -24,7 +23,7 @@ export class RegisterDto {
     email: string;
   
     @IsNotEmpty()
-    @MinLength(8)
+    @MinLength(12)
     password: string;
 
     @IsOptional()
@@ -48,9 +47,6 @@ export class RegisterDto {
     @IsOptional()
     lastName?: string;
     
-    @IsOptional()
-    @IsEnum(Role)
-    role?: string;
   }
 
 export class ForgotPasswordDto {
@@ -63,7 +59,7 @@ export class ResetPasswordDto {
   token: string;
 
   @IsNotEmpty()
-  @MinLength(8)
+  @MinLength(12)
   newPassword: string;
 }
 

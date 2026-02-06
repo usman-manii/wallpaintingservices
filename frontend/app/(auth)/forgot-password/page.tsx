@@ -8,6 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Mail, ArrowLeft } from 'lucide-react';
+import logger from '@/lib/logger';
+import { getErrorMessage } from '@/lib/error-utils';
+
+type ForgotPasswordResponse = {
+  message: string;
+  dev_token?: string;
+};
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -26,19 +33,29 @@ export default function ForgotPasswordPage() {
         body: JSON.stringify({ email }),
       });
 
+      const response = parseResponse(res);
       setStatus('success');
-      setMessage(res.message);
+      setMessage(response.message);
       
-      if (res.dev_token) {
-          console.log('DEV ONLY: Reset Token', res.dev_token);
-          // In dev, show it to help user
-          setMessage(`${res.message} (DEV ONLY: Token=${res.dev_token})`);
+      if (process.env.NODE_ENV === 'development' && response.dev_token) {
+        setMessage(`${response.message} (DEV ONLY: Token=${response.dev_token})`);
       }
 
-    } catch (err: any) {
+    } catch (err: unknown) {
+      logger.error('Forgot password request failed', err, { component: 'ForgotPasswordPage' });
       setStatus('error');
-      setMessage(err.message || 'Something went wrong');
+      setMessage(getErrorMessage(err, 'Something went wrong'));
     }
+  }
+
+  function parseResponse(value: unknown): ForgotPasswordResponse {
+    if (value && typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      const message = typeof obj.message === 'string' ? obj.message : 'Request submitted';
+      const devToken = typeof obj.dev_token === 'string' ? obj.dev_token : undefined;
+      return { message, dev_token: devToken };
+    }
+    return { message: 'Request submitted' };
   }
 
   return (

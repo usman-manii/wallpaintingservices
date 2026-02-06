@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import compression from 'compression';
 import { EnvironmentValidator } from './common/guards/env-validation';
@@ -18,14 +19,19 @@ async function bootstrap() {
   // Validate environment variables before starting
   try {
     EnvironmentValidator.validate();
-  } catch (error: any) {
-    logger.error(`Environment validation failed: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error(`Environment validation failed: ${message}`);
     process.exit(1);
   }
 
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
+
+  if (process.env.TRUST_PROXY === 'true') {
+    app.set('trust proxy', 1);
+  }
 
   // 1. Security Headers (Helmet middleware) - Enterprise Grade
   // Protects against common web vulnerabilities with strict CSP
@@ -87,7 +93,10 @@ async function bootstrap() {
 
   // 2.1 Cookie parsing for httpOnly auth cookies
   // Use a strong secret so signed cookies cannot be tampered with
-  const cookieSecret = process.env.COOKIE_SECRET || process.env.JWT_SECRET || 'change-me-cookie-secret';
+  const cookieSecret = process.env.COOKIE_SECRET;
+  if (!cookieSecret) {
+    throw new Error('COOKIE_SECRET is required to start the server');
+  }
   app.use(cookieParser(cookieSecret));
 
   // 2.2 Cache headers - prevent stale HTML/API responses that force users to hard-refresh
@@ -119,12 +128,12 @@ async function bootstrap() {
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, Postman, etc.)
       if (!origin) return callback(null, true);
-      
+
       // In development, be more permissive with local network IPs
       if (!isProduction && origin.match(/^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+):(3000|3001)$/)) {
         return callback(null, true);
       }
-      
+
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -159,8 +168,9 @@ async function bootstrap() {
   }));
 
   // 5. Swagger API Documentation (disabled in production unless explicitly enabled)
-  // Temporarily disabled due to Swagger compatibility issue with NestJS 11
-  const swaggerEnabled = false; // process.env.SWAGGER_ENABLED === 'true' || !isProduction;
+  const swaggerEnabled =
+    process.env.SWAGGER_ENABLED === 'true' ||
+    (!isProduction && process.env.SWAGGER_ENABLED !== 'false');
   if (swaggerEnabled) {
     const config = new DocumentBuilder()
       .setTitle('AI CMS API')
@@ -175,16 +185,16 @@ async function bootstrap() {
       .addTag('settings', 'Site Settings')
       .addTag('health', 'Health Checks')
       .build();
-    const document = SwaggerModule.createDocument(app as any, config);
-    SwaggerModule.setup('api/docs', app as any, document);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
   } else {
-    logger.log('Swagger docs disabled (compatibility issue - will be fixed in next update).');
+    logger.log('Swagger docs disabled. Set SWAGGER_ENABLED=true to enable.');
   }
 
   // 6. Graceful Shutdown Handling
   // Ensures clean shutdown on SIGTERM/SIGINT
   app.enableShutdownHooks();
-  
+
   process.on('SIGTERM', async () => {
     logger.warn('SIGTERM received, shutting down gracefully...');
     await app.close();
@@ -200,17 +210,18 @@ async function bootstrap() {
   // 7. Start Server
   const PORT = process.env.PORT || 3001;
   const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces
-  
+
   await app.listen(PORT, HOST);
-  
-  logger.log(`🚀 Backend running on: http://localhost:${PORT}`);
-  logger.log(`📚 Swagger Docs: http://localhost:${PORT}/api/docs`);
-  logger.log(`🏥 Health Check: http://localhost:${PORT}/health`);
-  logger.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.log(`✅ Security: Helmet + CORS + Rate Limiting Enabled`);
+
+  logger.log(`Backend running on: http://localhost:${PORT}`);
+  logger.log(`Swagger Docs: http://localhost:${PORT}/api/docs`);
+  logger.log(`Health Check: http://localhost:${PORT}/health`);
+  logger.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.log('Security: Helmet + CORS + Rate Limiting Enabled');
 }
 
-bootstrap().catch(err => {
-  console.error('❌ Fatal Error during bootstrap:', err);
+bootstrap().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`Fatal Error during bootstrap: ${message}\n`);
   process.exit(1);
 });

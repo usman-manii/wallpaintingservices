@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -7,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { useToast } from '@/components/ui/Toast';
 import { Save, Plus, Trash, Share2, Globe, Link as LinkIcon, Facebook, Linkedin, Twitter, Youtube, Instagram } from 'lucide-react';
 import { fetchAPI } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-utils';
 
 interface SocialChannel {
   id: string;
@@ -33,6 +36,52 @@ const DEFAULT_CHANNELS: SocialChannel[] = [
   { id: 'reddit', name: 'Reddit', url: 'https://reddit.com/r/', enabled: false },
 ];
 
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseBoolean = (value: unknown, fallback = false): boolean => (
+  typeof value === 'boolean' ? value : fallback
+);
+
+const parseNumber = (value: unknown, fallback = 0): number => (
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
+
+const parseSocialChannel = (value: unknown): SocialChannel | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    name: parseString(value.name, id),
+    url: parseString(value.url),
+    enabled: parseBoolean(value.enabled),
+    isCustom: parseBoolean(value.isCustom),
+    apiKey: parseString(value.apiKey),
+    apiSecret: parseString(value.apiSecret),
+    autoPublish: parseBoolean(value.autoPublish),
+    renewInterval: parseNumber(value.renewInterval),
+  };
+};
+
+const parseSocialChannels = (value: unknown): SocialChannel[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map(parseSocialChannel)
+    .filter((channel): channel is SocialChannel => !!channel);
+};
+
 export default function DistributionPage() {
   const { success, error: showError } = useToast();
   const [loading, setLoading] = useState(true);
@@ -42,22 +91,24 @@ export default function DistributionPage() {
   const loadSettings = useCallback(async () => {
     try {
       const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
-      if (data && data.socialLinks && Array.isArray(data.socialLinks)) {
-        // Merge saved config
-        const mergedDefaults = DEFAULT_CHANNELS.map(def => {
-          const saved = data.socialLinks.find((p: any) => p.id === def.id);
+      const socialLinks = isRecord(data) ? parseSocialChannels(data.socialLinks) : [];
+      if (socialLinks.length > 0) {
+        const mergedDefaults = DEFAULT_CHANNELS.map((def) => {
+          const saved = socialLinks.find((link) => link.id === def.id);
           return saved ? { ...def, ...saved } : def;
         });
 
-        const customChannels = data.socialLinks.filter((s: any) => 
-          s.isCustom || !DEFAULT_CHANNELS.find(d => d.id === s.id)
+        const customChannels = socialLinks.filter((link) =>
+          link.isCustom || !DEFAULT_CHANNELS.find((def) => def.id === link.id)
         );
 
         setChannels([...mergedDefaults, ...customChannels]);
+      } else {
+        setChannels(DEFAULT_CHANNELS);
       }
-    } catch (e) {
-      console.error(e);
-      showError('Failed to load social settings');
+    } catch (error: unknown) {
+      logger.error('Failed to load social settings', error);
+      showError(getErrorMessage(error, 'Failed to load social settings'));
     } finally {
       setLoading(false);
     }
@@ -76,9 +127,9 @@ export default function DistributionPage() {
         cache: 'no-store',
       });
       success('Distribution channels saved successfully');
-    } catch (e) {
-      console.error(e);
-      showError('Failed to save settings');
+    } catch (error: unknown) {
+      logger.error('Failed to save social settings', error);
+      showError(getErrorMessage(error, 'Failed to save settings'));
     }
   };
 
@@ -175,8 +226,8 @@ export default function DistributionPage() {
                                 <label className="flex items-center gap-2 cursor-pointer">
                                   <input 
                                     type="checkbox"
-                                    checked={(channel as any).autoPublish || false}
-                                    onChange={(e) => updateChannel(channel.id, { autoPublish: e.target.checked } as any)}
+                                    checked={channel.autoPublish || false}
+                                    onChange={(e) => updateChannel(channel.id, { autoPublish: e.target.checked })}
                                     className="accent-blue-600 h-3 w-3"
                                   />
                                   <span>Auto-publish new posts</span>
@@ -187,8 +238,8 @@ export default function DistributionPage() {
                               <label className="block text-[10px] uppercase text-slate-500 font-bold mb-1">API Key / Access Token</label>
                               <Input 
                                 type="password" 
-                                value={(channel as any).apiKey || ''} 
-                                onChange={(e) => updateChannel(channel.id, { apiKey: e.target.value } as any)}
+                                value={channel.apiKey || ''} 
+                                onChange={(e) => updateChannel(channel.id, { apiKey: e.target.value })}
                                 className="h-7 text-xs font-mono"
                                 placeholder={`Enter ${channel.name} API Key`}
                               />
@@ -199,8 +250,8 @@ export default function DistributionPage() {
                                 <label className="block text-[10px] uppercase text-slate-500 font-bold mb-1">API Secret (Optional)</label>
                                 <Input 
                                   type="password" 
-                                  value={(channel as any).apiSecret || ''} 
-                                  onChange={(e) => updateChannel(channel.id, { apiSecret: e.target.value } as any)}
+                                  value={channel.apiSecret || ''} 
+                                  onChange={(e) => updateChannel(channel.id, { apiSecret: e.target.value })}
                                   className="h-7 text-xs font-mono"
                                   placeholder="Secret / Client Secret"
                                 />
@@ -214,8 +265,8 @@ export default function DistributionPage() {
                                   <Input 
                                     type="number" 
                                     min="0"
-                                    value={(channel as any).renewInterval || 0} 
-                                    onChange={(e) => updateChannel(channel.id, { renewInterval: parseInt(e.target.value) || 0 } as any)}
+                                    value={channel.renewInterval || 0} 
+                                    onChange={(e) => updateChannel(channel.id, { renewInterval: Number.parseInt(e.target.value, 10) || 0 })}
                                     className="h-7 w-16 text-xs text-center"
                                   />
                                   <span className="text-slate-500">days (0 to disable)</span>
@@ -308,3 +359,4 @@ export default function DistributionPage() {
     </div>
   );
 }
+

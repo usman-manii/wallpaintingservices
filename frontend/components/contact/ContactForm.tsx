@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -7,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Send, CheckCircle, AlertCircle } from 'lucide-react';
 import { Captcha } from '@/components/auth/Captcha';
+import { getErrorMessage } from '@/lib/error-utils';
 
 export function ContactForm() {
   const [formData, setFormData] = useState({
@@ -61,10 +64,10 @@ export function ContactForm() {
         captchaId: '',
         captchaType: '',
       });
-    } catch (error: any) {
-      console.error(error);
+    } catch (error: unknown) {
+      logger.error('Failed to send contact message', error, { component: 'ContactForm' });
       setStatus('error');
-      setErrorMessage(error.message || 'Failed to send message. Please try again.');
+      setErrorMessage(getErrorMessage(error, 'Failed to send message. Please try again.'));
     }
   };
 
@@ -177,4 +180,5 @@ export function ContactForm() {
     </div>
   );
 }
+
 

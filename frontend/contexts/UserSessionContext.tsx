@@ -2,7 +2,9 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
-import { logoutEverywhere } from '@/lib/authClient';
+import { extractAuthUser, logoutEverywhere } from '@/lib/authClient';
+import logger from '@/lib/logger';
+import { getErrorMessage } from '@/lib/error-utils';
 
 type User = {
   id?: string;
@@ -52,7 +54,7 @@ async function fetchUserProfileSingleton(): Promise<User> {
   pendingUserProfileFetch = (async () => {
     try {
       const profile = await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: false });
-      const normalized = (profile as any)?.user || profile || {};
+      const normalized = extractAuthUser(profile);
       userProfileCache = normalized;
       userProfileCacheTimestamp = now;
       return normalized;
@@ -79,7 +81,7 @@ export function UserSessionProvider({ children }: { children: React.ReactNode })
   const refreshSession = useCallback(async () => {
     await fetchAPI('/auth/refresh', { method: 'POST', cache: 'no-store', redirectOn401: false });
     const profile = await fetchAPI('/auth/profile', { method: 'GET', cache: 'no-store', redirectOn401: false });
-    const normalized = (profile as any)?.user || profile || {};
+    const normalized = extractAuthUser(profile);
     const nextRole = normalized.role || null;
     setUser(normalized);
     setRole(nextRole);
@@ -89,7 +91,7 @@ export function UserSessionProvider({ children }: { children: React.ReactNode })
     try {
       await logoutEverywhere();
     } catch (error) {
-      console.error('Logout error:', error);
+      logger.error('Logout error', error, { component: 'UserSessionContext' });
     } finally {
       // Clear state and cache
       setUser(null);
@@ -117,7 +119,7 @@ export function UserSessionProvider({ children }: { children: React.ReactNode })
           setUser(null);
           setRole(null);
           // Don't retry indefinitely - just set loading to false
-          console.debug('[UserSession] Profile load failed:', err);
+          logger.debug('Profile load failed', { component: 'UserSessionContext', error: getErrorMessage(err) });
         }
       } finally {
         if (!cancelled) setLoading(false);

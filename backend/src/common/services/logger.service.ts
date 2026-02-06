@@ -20,7 +20,7 @@ interface LogEntry {
   message: string;
   context?: string;
   timestamp: string;
-  data?: any;
+  data?: unknown;
   error?: Error;
 }
 
@@ -72,14 +72,29 @@ export class EnhancedLoggerService implements NestLoggerService {
     try {
       appendFileSync(filename, entry + '\n');
     } catch (error) {
-      console.error('Failed to write log to file:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`Failed to write log to file: ${message}\n`);
+    }
+  }
+
+  private stringifyMessage(message: unknown): string {
+    if (typeof message === 'string') {
+      return message;
+    }
+    if (message instanceof Error) {
+      return message.message;
+    }
+    try {
+      return JSON.stringify(message);
+    } catch {
+      return String(message);
     }
   }
 
   /**
    * Core logging method
    */
-  private logEntry(level: LogLevel, message: string, data?: any, error?: Error): void {
+  private logEntry(level: LogLevel, message: string, data?: unknown, error?: Error): void {
     const entry: LogEntry = {
       level,
       message,
@@ -93,7 +108,7 @@ export class EnhancedLoggerService implements NestLoggerService {
 
     // Console output
     const coloredOutput = this.colorize(level, formatted);
-    console.log(coloredOutput);
+    process.stdout.write(`${coloredOutput}\n`);
 
     // File output (production only)
     if (this.isProduction) {
@@ -118,29 +133,29 @@ export class EnhancedLoggerService implements NestLoggerService {
   }
 
   // NestJS LoggerService interface methods
-  log(message: any, context?: string): void {
-    this.logEntry(LogLevel.INFO, message, undefined, undefined);
+  log(message: unknown, context?: string): void {
+    this.logEntry(LogLevel.INFO, this.stringifyMessage(message), undefined, undefined);
   }
 
-  error(message: any, trace?: string, context?: string): void {
+  error(message: unknown, trace?: string, context?: string): void {
     const error = trace ? new Error(trace) : undefined;
-    this.logEntry(LogLevel.ERROR, message, undefined, error);
+    this.logEntry(LogLevel.ERROR, this.stringifyMessage(message), undefined, error);
   }
 
-  warn(message: any, context?: string): void {
-    this.logEntry(LogLevel.WARN, message);
+  warn(message: unknown, context?: string): void {
+    this.logEntry(LogLevel.WARN, this.stringifyMessage(message));
   }
 
-  debug(message: any, context?: string): void {
-    this.logEntry(LogLevel.DEBUG, message);
+  debug(message: unknown, context?: string): void {
+    this.logEntry(LogLevel.DEBUG, this.stringifyMessage(message));
   }
 
-  verbose(message: any, context?: string): void {
-    this.logEntry(LogLevel.VERBOSE, message);
+  verbose(message: unknown, context?: string): void {
+    this.logEntry(LogLevel.VERBOSE, this.stringifyMessage(message));
   }
 
   // Custom methods with additional data
-  logWithData(level: LogLevel, message: string, data: any): void {
+  logWithData(level: LogLevel, message: string, data: unknown): void {
     this.logEntry(level, message, data);
   }
 

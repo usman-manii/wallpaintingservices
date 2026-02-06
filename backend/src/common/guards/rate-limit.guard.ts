@@ -20,6 +20,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
+import { AuthenticatedRequest } from '../types';
 
 export interface RateLimitOptions {
   points: number;          // Number of requests allowed
@@ -66,7 +67,7 @@ export class RateLimitGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const options = this.getOptions(context);
 
     if (!options) {
@@ -157,12 +158,12 @@ export class RateLimitGuard implements CanActivate {
     return classOptions || null;
   }
 
-  private getKey(request: Request, options: RateLimitOptions): string {
+  private getKey(request: AuthenticatedRequest, options: RateLimitOptions): string {
     const prefix = options.keyPrefix || 'ratelimit';
     const clientIp = this.getClientIp(request);
     
     // Use user ID if authenticated, otherwise IP
-    const identifier = (request as any).user?.id || clientIp;
+    const identifier = request.user?.id || clientIp;
     
     return `${prefix}:${identifier}`;
   }

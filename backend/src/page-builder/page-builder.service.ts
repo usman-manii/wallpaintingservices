@@ -1,7 +1,42 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreatePageDto, UpdatePageDto, CreateComponentDto, CreateTemplateDto } from './dto/page.dto';
+import { CreatePageDto, UpdatePageDto, CreateComponentDto, CreateTemplateDto, PageStatus, PageType } from './dto/page.dto';
 import { SanitizationUtil } from '../common/utils/sanitization.util';
+import { Prisma, PageStatus as DbPageStatus, PageType as DbPageType, Role } from '@prisma/client';
+import { JsonValue } from '../common/types/json';
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const isString = (value: unknown): value is string => typeof value === 'string';
+
+const parseRoles = (roles?: string[]): Role[] | undefined => {
+  if (!roles || roles.length === 0) return undefined;
+  const roleValues = Object.values(Role);
+  const parsed = roles.filter((role): role is Role => roleValues.includes(role as Role));
+  return parsed.length > 0 ? parsed : undefined;
+};
+
+const parsePageStatusFilter = (status?: string): DbPageStatus | undefined => (
+  status && Object.values(DbPageStatus).includes(status as DbPageStatus)
+    ? (status as DbPageStatus)
+    : undefined
+);
+
+const parsePageTypeFilter = (pageType?: string): DbPageType | undefined => (
+  pageType && Object.values(DbPageType).includes(pageType as DbPageType)
+    ? (pageType as DbPageType)
+    : undefined
+);
+
+const mapPageStatus = (status?: PageStatus): DbPageStatus | undefined => (
+  status ? (status as DbPageStatus) : undefined
+);
+
+const mapPageType = (pageType?: PageType): DbPageType | undefined => (
+  pageType ? (pageType as DbPageType) : undefined
+);
 
 @Injectable()
 export class PageBuilderService {
@@ -34,13 +69,13 @@ export class PageBuilderService {
     }
 
     // Handle content - can be simple HTML string or page builder format
-    let sanitizedContent: any;
+    let sanitizedContent: Prisma.InputJsonValue;
     if (typeof dto.content === 'string') {
       // Simple HTML content - store as string
       sanitizedContent = SanitizationUtil.sanitizeHTML(dto.content);
     } else if (dto.content && typeof dto.content === 'object') {
       // Page builder format - sanitize sections
-      sanitizedContent = this.sanitizePageContent(dto.content);
+      sanitizedContent = this.sanitizePageContent(dto.content) as Prisma.InputJsonValue;
     } else {
       // Default empty content
       sanitizedContent = dto.usePageBuilder ? {
@@ -55,14 +90,15 @@ export class PageBuilderService {
 
     // Destructure to exclude parentId from spreading
     const { parentId, allowedRoles, ...dtoWithoutRelations } = dto;
+    const parsedRoles = parseRoles(allowedRoles);
     
     const page = await this.prisma.page.create({
       data: {
         ...dtoWithoutRelations,
-        pageType: dto.pageType as any,
-        status: dto.status as any,
+        pageType: mapPageType(dto.pageType),
+        status: mapPageStatus(dto.status),
         content: sanitizedContent,
-        ...(allowedRoles && { allowedRoles: allowedRoles as any }),
+        ...(parsedRoles && { allowedRoles: parsedRoles }),
         author: {
           connect: { id: authorId }
         },
@@ -90,16 +126,22 @@ export class PageBuilderService {
     page?: number;
     pageSize?: number;
   }) {
-    const where: any = {};
+    const where: Prisma.PageWhereInput = {};
     
     // Only apply status filter if explicitly provided (not 'ALL')
     if (filters?.status && filters.status !== 'ALL') {
-      where.status = filters.status;
+      const parsedStatus = parsePageStatusFilter(filters.status);
+      if (parsedStatus) {
+        where.status = parsedStatus;
+      }
     }
     
     // Only apply pageType filter if explicitly provided (not 'ALL')
     if (filters?.pageType && filters.pageType !== 'ALL') {
-      where.pageType = filters.pageType;
+      const parsedPageType = parsePageTypeFilter(filters.pageType);
+      if (parsedPageType) {
+        where.pageType = parsedPageType;
+      }
     }
     
     // Apply author filter if provided
@@ -214,12 +256,22 @@ export class PageBuilderService {
       throw new BadRequestException('CSS cannot contain script tags');
     }
     
-    const updateData: any = {
-        ...dtoWithoutRelations,
-        pageType: dto.pageType as any,
-        status: dto.status as any,
-        ...(allowedRoles && { allowedRoles: allowedRoles as any }),
-      };
+    const updateData: Prisma.PageUpdateInput = {
+      ...dtoWithoutRelations,
+    };
+
+    if (dto.pageType) {
+      updateData.pageType = mapPageType(dto.pageType);
+    }
+
+    if (dto.status) {
+      updateData.status = mapPageStatus(dto.status);
+    }
+
+    const parsedRoles = parseRoles(allowedRoles);
+    if (parsedRoles) {
+      updateData.allowedRoles = parsedRoles;
+    }
       
       // Handle parent relation separately
       if (parentId !== undefined) {
@@ -302,7 +354,7 @@ export class PageBuilderService {
   private async createVersion(
     pageId: string,
     title: string,
-    content: any,
+    content: Prisma.InputJsonValue,
     customCss: string | null | undefined,
     customJs: string | null | undefined,
     userId: string,
@@ -380,7 +432,7 @@ export class PageBuilderService {
   }
 
   async getAllComponents(filters?: { type?: string; category?: string; isGlobal?: boolean }) {
-    const where: any = {};
+    const where: Prisma.PageComponentWhereInput = {};
     
     if (filters?.type) where.type = filters.type;
     if (filters?.category) where.category = filters.category;
@@ -430,7 +482,7 @@ export class PageBuilderService {
   }
 
   async getAllTemplates(filters?: { category?: string; isPremium?: boolean }) {
-    const where: any = { isActive: true };
+    const where: Prisma.PageTemplateWhereInput = { isActive: true };
     
     if (filters?.category) where.category = filters.category;
     if (filters?.isPremium !== undefined) where.isPremium = filters.isPremium;
@@ -464,8 +516,8 @@ export class PageBuilderService {
       title,
       slug,
       content: template.content,
-      pageType: 'STATIC' as any,
-      status: 'DRAFT' as any,
+      pageType: PageType.STATIC,
+      status: PageStatus.DRAFT,
     }, authorId);
   }
 
@@ -478,7 +530,7 @@ export class PageBuilderService {
     });
   }
 
-  async updateGlobalSection(id: string, data: any) {
+  async updateGlobalSection(id: string, data: Prisma.GlobalSectionUpdateInput) {
     return this.prisma.globalSection.update({
       where: { id },
       data,
@@ -491,35 +543,52 @@ export class PageBuilderService {
    * Recursively sanitize HTML content in page sections
    * Prevents XSS attacks via stored content
    */
-  private sanitizePageContent(content: any): any {
-    if (!content) return content;
-    
-    // Handle sections array
-    if (content.sections && Array.isArray(content.sections)) {
-      content.sections = content.sections.map((section: any) => {
-        if (section.content) {
-          // Sanitize text fields
-          if (section.content.text) {
-            section.content.text = SanitizationUtil.sanitizeHTML(section.content.text);
-          }
-          if (section.content.leftColumn) {
-            section.content.leftColumn = SanitizationUtil.sanitizeHTML(section.content.leftColumn);
-          }
-          if (section.content.rightColumn) {
-            section.content.rightColumn = SanitizationUtil.sanitizeHTML(section.content.rightColumn);
-          }
-          // Sanitize columns array
-          if (section.content.columns && Array.isArray(section.content.columns)) {
-            section.content.columns = section.content.columns.map((col: any) => ({
-              ...col,
-              content: col.content ? SanitizationUtil.sanitizeHTML(col.content) : col.content
-            }));
-          }
+  private sanitizePageContent(content: JsonValue): JsonValue {
+    if (!content || typeof content !== 'object' || Array.isArray(content)) {
+      return content;
+    }
+
+    const contentRecord: Record<string, unknown> = { ...content };
+
+    if (Array.isArray(contentRecord.sections)) {
+      contentRecord.sections = contentRecord.sections.map((section) => {
+        if (!isRecord(section)) {
+          return section;
         }
-        return section;
+
+        const sectionCopy: Record<string, unknown> = { ...section };
+        const sectionContent = isRecord(sectionCopy.content) ? { ...sectionCopy.content } : undefined;
+
+        if (sectionContent) {
+          if (isString(sectionContent.text)) {
+            sectionContent.text = SanitizationUtil.sanitizeHTML(sectionContent.text);
+          }
+          if (isString(sectionContent.leftColumn)) {
+            sectionContent.leftColumn = SanitizationUtil.sanitizeHTML(sectionContent.leftColumn);
+          }
+          if (isString(sectionContent.rightColumn)) {
+            sectionContent.rightColumn = SanitizationUtil.sanitizeHTML(sectionContent.rightColumn);
+          }
+          if (Array.isArray(sectionContent.columns)) {
+            sectionContent.columns = sectionContent.columns.map((column) => {
+              if (!isRecord(column)) {
+                return column;
+              }
+              const columnCopy: Record<string, unknown> = { ...column };
+              if (isString(columnCopy.content)) {
+                columnCopy.content = SanitizationUtil.sanitizeHTML(columnCopy.content);
+              }
+              return columnCopy;
+            });
+          }
+
+          sectionCopy.content = sectionContent;
+        }
+
+        return sectionCopy;
       });
     }
-    
-    return content;
+
+    return contentRecord as JsonValue;
   }
 }

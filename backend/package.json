@@ -36,13 +36,13 @@
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.1.12",
-    "@nestjs/config": "^4.0.2",
+    "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.1.12",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.12",
     "@nestjs/schedule": "^6.1.0",
-    "@nestjs/swagger": "^2.5.1",
+    "@nestjs/swagger": "^11.2.6",
     "@nestjs/terminus": "^11.0.0",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/adapter-pg": "^7.2.0",
@@ -50,7 +50,7 @@
     "@types/cookie-parser": "^1.4.10",
     "@types/multer": "^2.0.0",
     "axios": "^1.13.2",
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "compression": "^1.8.1",
@@ -58,13 +58,16 @@
     "dotenv": "^16.4.7",
     "helmet": "^8.1.0",
     "hexoid": "^2.0.0",
+    "lodash": "^4.17.23",
     "multer": "^2.0.2",
+    "nodemailer": "^8.0.0",
     "openai": "^4.76.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sanitize-html": "^2.17.0",
     "sharp": "^0.34.5",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0"
@@ -78,6 +81,7 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.5",
+    "@types/nodemailer": "^7.0.9",
     "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.11.10",
     "@types/supertest": "^6.0.2",
@@ -93,5 +97,16 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "@nestjs/config": {
+      "lodash": "4.17.23"
+    },
+    "@nestjs/cli": {
+      "lodash": "4.17.23"
+    },
+    "glob": "13.0.1",
+    "minimatch": "10.1.2",
+    "@isaacs/brace-expansion": "5.0.1"
   }
 }

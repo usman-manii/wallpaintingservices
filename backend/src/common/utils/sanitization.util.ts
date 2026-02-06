@@ -1,3 +1,5 @@
+import sanitizeHtml from 'sanitize-html';
+
 /**
  * HTML Sanitization Utility
  * Prevents XSS attacks by sanitizing user-generated content
@@ -12,48 +14,33 @@ export class SanitizationUtil {
   static sanitizeHTML(html: string): string {
     if (!html) return '';
 
-    // List of allowed tags for rich blog content
-    const allowedTags = [
-      'p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'ul', 'ol', 'li', 'blockquote', 'code', 'pre',
-      'a', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-      'span', 'div', 'section', 'article',
-    ];
-
-    const allowedAttributes = {
-      'a': ['href', 'title', 'target', 'rel'],
-      'img': ['src', 'alt', 'title', 'width', 'height'],
-      'span': ['class'],
-      'div': ['class'],
-      'code': ['class'],
-      'pre': ['class'],
-    };
-
-    // Basic sanitization - In production, use DOMPurify or similar
-    let sanitized = html;
-
-    // Remove script tags and content
-    sanitized = sanitized.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-    
-    // Remove event handlers (onclick, onerror, etc.)
-    sanitized = sanitized.replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '');
-    sanitized = sanitized.replace(/\son\w+\s*=\s*[^\s>]*/gi, '');
-
-    // Remove javascript: protocol
-    sanitized = sanitized.replace(/href\s*=\s*["']javascript:[^"']*["']/gi, 'href="#"');
-    sanitized = sanitized.replace(/src\s*=\s*["']javascript:[^"']*["']/gi, 'src=""');
-
-    // Remove data: protocol from unsafe contexts
-    sanitized = sanitized.replace(/src\s*=\s*["']data:(?!image\/)[^"']*["']/gi, 'src=""');
-
-    // Remove dangerous tags
-    const dangerousTags = ['iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select'];
-    dangerousTags.forEach(tag => {
-      const regex = new RegExp(`<${tag}\\b[^<]*(?:(?!<\\/${tag}>)<[^<]*)*<\\/${tag}>`, 'gi');
-      sanitized = sanitized.replace(regex, '');
+    return sanitizeHtml(html, {
+      allowedTags: [
+        'p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'ul', 'ol', 'li', 'blockquote', 'code', 'pre',
+        'a', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+        'span', 'div', 'section', 'article',
+      ],
+      allowedAttributes: {
+        a: ['href', 'title', 'target', 'rel'],
+        img: ['src', 'alt', 'title', 'width', 'height', 'loading'],
+        '*': ['class', 'id', 'aria-label', 'aria-hidden', 'role', 'data-*'],
+      },
+      allowedSchemes: ['http', 'https', 'mailto', 'tel', 'data'],
+      allowedSchemesByTag: {
+        img: ['http', 'https', 'data'],
+      },
+      allowProtocolRelative: false,
+      transformTags: {
+        a: (tagName, attribs) => {
+          if (attribs.target === '_blank') {
+            const rel = attribs.rel ? attribs.rel : 'noopener noreferrer';
+            return { tagName, attribs: { ...attribs, rel } };
+          }
+          return { tagName, attribs };
+        },
+      },
     });
-
-    return sanitized;
   }
 
   /**

@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import logger from '@/lib/logger';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -9,7 +11,8 @@ import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { fetchAPI } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { Plus, Edit, Trash2, Folder } from 'lucide-react';
+import { Plus, Edit, Trash2, Folder, ChevronRight, ChevronDown, Layers } from 'lucide-react';
+import { getErrorMessage } from '@/lib/error-utils';
 
 interface Category {
   id: string;
@@ -29,6 +32,82 @@ interface Category {
   };
 }
 
+type CategoryFormData = {
+  name: string;
+  slug: string;
+  description: string;
+  color: string;
+  parentId: string;
+};
+
+const DEFAULT_FORM: CategoryFormData = {
+  name: '',
+  slug: '',
+  description: '',
+  color: '#3B82F6',
+  parentId: '',
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseOptionalString = (value: unknown): string | undefined => {
+  const parsed = parseString(value).trim();
+  return parsed ? parsed : undefined;
+};
+
+const parseNumber = (value: unknown, fallback = 0): number => (
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
+
+const parseCategory = (value: unknown): Category | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  const name = parseString(value.name);
+  const slug = parseString(value.slug);
+  if (!id || !name || !slug) {
+    return null;
+  }
+  const parentRaw = isRecord(value.parent) ? value.parent : null;
+  const parentId = parentRaw ? parseString(parentRaw.id) : '';
+  const parent = parentId
+    ? {
+        id: parentId,
+        name: parseString(parentRaw?.name, parentId),
+        slug: parseString(parentRaw?.slug),
+      }
+    : undefined;
+  const children = Array.isArray(value.children)
+    ? value.children.map(parseCategory).filter((child): child is Category => !!child)
+    : undefined;
+  const countRaw = isRecord(value._count) ? value._count : null;
+  const count = countRaw ? { posts: parseNumber(countRaw.posts) } : undefined;
+  return {
+    id,
+    name,
+    slug,
+    description: parseOptionalString(value.description),
+    color: parseOptionalString(value.color),
+    parentId: parseOptionalString(value.parentId),
+    parent,
+    children,
+    _count: count,
+  };
+};
+
+const parseCategoryList = (value: unknown): Category[] => (
+  Array.isArray(value)
+    ? value.map(parseCategory).filter((category): category is Category => !!category)
+    : []
+);
+
 export default function CategoriesPage() {
   const { success, error: showError } = useToast();
   const { dialog, confirm } = useConfirmDialog();
@@ -36,30 +115,32 @@ export default function CategoriesPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    slug: '',
-    description: '',
-    color: '#3B82F6',
-    parentId: '',
-  });
+  const [formData, setFormData] = useState<CategoryFormData>(DEFAULT_FORM);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [hasInitializedTree, setHasInitializedTree] = useState(false);
 
   const fetchCategories = useCallback(async () => {
     try {
       const data = await fetchAPI('/categories', { redirectOn401: false, cache: 'no-store' });
-      setCategories(Array.isArray(data) ? data : []);
-    } catch (error: any) {
-      console.error('Error fetching categories:', error);
-      showError(error.message || 'Failed to fetch categories');
+      setCategories(parseCategoryList(data));
+    } catch (error: unknown) {
+      logger.error('Error fetching categories:', error);
+      showError(getErrorMessage(error, 'Failed to fetch categories'));
       setCategories([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
+
+  useEffect(() => {
+    if (hasInitializedTree || categories.length === 0) return;
+    setExpandedIds(new Set(categories.map((cat) => cat.id)));
+    setHasInitializedTree(true);
+  }, [categories, hasInitializedTree]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,11 +160,11 @@ export default function CategoriesPage() {
       success(editingCategory ? 'Category updated successfully' : 'Category created successfully');
       setShowForm(false);
       setEditingCategory(null);
-      setFormData({ name: '', slug: '', description: '', color: '#3B82F6', parentId: '' });
+      setFormData(DEFAULT_FORM);
       fetchCategories();
-    } catch (error: any) {
-      console.error('Error saving category:', error);
-      showError(error.message || 'Failed to save category');
+    } catch (error: unknown) {
+      logger.error('Error saving category:', error);
+      showError(getErrorMessage(error, 'Failed to save category'));
     }
   };
 
@@ -113,8 +194,8 @@ export default function CategoriesPage() {
           success('Category deleted successfully');
           fetchCategories();
         } catch (error) {
-          console.error('Error deleting category:', error);
-          showError('An error occurred');
+          logger.error('Error deleting category:', error);
+          showError(getErrorMessage(error, 'An error occurred'));
         }
       },
       'danger'
@@ -127,6 +208,119 @@ export default function CategoriesPage() {
       name,
       slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
     });
+  };
+
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, Category[]>();
+    categories.forEach((cat) => {
+      const key = cat.parentId || 'root';
+      const list = map.get(key) || [];
+      list.push(cat);
+      map.set(key, list);
+    });
+    map.forEach((list) => list.sort((a, b) => a.name.localeCompare(b.name)));
+    return map;
+  }, [categories]);
+
+  const rootCategories = (childrenByParent.get('root') || (categories.length > 0 ? categories : []));
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const expandAll = () => {
+    setExpandedIds(new Set(categories.map((cat) => cat.id)));
+  };
+
+  const collapseAll = () => {
+    setExpandedIds(new Set());
+  };
+
+  const renderCategoryRow = (category: Category, level: number = 0) => {
+    const children = childrenByParent.get(category.id) || [];
+    const hasChildren = children.length > 0;
+    const isExpanded = expandedIds.has(category.id);
+
+    return (
+      <div key={category.id} className="space-y-2">
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3"
+          style={{ paddingLeft: `${level * 24 + 16}px` }}
+        >
+          <button
+            type="button"
+            onClick={() => hasChildren && toggleExpand(category.id)}
+            className={`flex items-center justify-center w-6 h-6 rounded-md border border-slate-200 dark:border-slate-700 ${
+              hasChildren ? 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800' : 'text-slate-300 dark:text-slate-600'
+            }`}
+            disabled={!hasChildren}
+            aria-label={hasChildren ? (isExpanded ? 'Collapse category' : 'Expand category') : 'No subcategories'}
+          >
+            {hasChildren ? (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <Layers size={12} />}
+          </button>
+
+          <div
+            className="w-3 h-3 rounded-full"
+            style={{ backgroundColor: category.color || '#3B82F6' }}
+          />
+
+          <div className="flex-1 min-w-[200px]">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{category.name}</h3>
+              <span className="text-xs text-slate-500 dark:text-slate-400">/{category.slug}</span>
+            </div>
+            {category.description && (
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
+                {category.description}
+              </p>
+            )}
+          </div>
+
+          <Badge variant="info" className="text-xs">
+            {category._count?.posts || 0} posts
+          </Badge>
+
+          {hasChildren && (
+            <Badge variant="outline" className="text-xs">
+              {children.length} subcategories
+            </Badge>
+          )}
+
+          <div className="flex gap-2 ml-auto">
+            <Button
+              size="sm"
+              onClick={() => handleEdit(category)}
+              className="flex items-center gap-1"
+            >
+              <Edit className="w-3 h-3" />
+              Edit
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => handleDelete(category.id, category.name)}
+              className="bg-red-600 hover:bg-red-700 text-white flex items-center gap-1"
+            >
+              <Trash2 className="w-3 h-3" />
+              Delete
+            </Button>
+          </div>
+        </div>
+
+        {hasChildren && isExpanded && (
+          <div className="space-y-2">
+            {children.map((child) => renderCategoryRow(child, level + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (loading) {
@@ -154,7 +348,7 @@ export default function CategoriesPage() {
           onClick={() => {
             setShowForm(!showForm);
             setEditingCategory(null);
-            setFormData({ name: '', slug: '', description: '', color: '#3B82F6', parentId: '' });
+            setFormData(DEFAULT_FORM);
           }}
           className="flex items-center gap-2"
         >
@@ -281,90 +475,35 @@ export default function CategoriesPage() {
             </CardContent>
           </Card>
         ) : (
-          (() => {
-            // Separate root categories (no parent) from child categories
-            const rootCategories = categories.filter(cat => !cat.parentId);
-            
-            const renderCategoryTree = (category: Category, level: number = 0) => (
-              <div key={category.id} className={level > 0 ? 'ml-8 border-l-2 border-slate-200 dark:border-slate-700 pl-4 mt-2' : ''}>
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-4 h-4 rounded-full"
-                          style={{ backgroundColor: category.color || '#3B82F6' }}
-                        />
-                        <div>
-                          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                            {category.name}
-                          </h3>
-                          {category.parent && (
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                              Parent: {category.parent.name}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <Badge variant="info">
-                        {category._count?.posts || 0} posts
-                      </Badge>
-                    </div>
-                    {category.description && (
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                        {category.description}
-                      </p>
-                    )}
-                    {category.children && category.children.length > 0 && (
-                      <div className="mb-4">
-                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
-                          Subcategories ({category.children.length}):
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {category.children.map((child) => (
-                            <Badge key={child.id} variant="outline" className="text-xs">
-                              {child.name} ({child._count?.posts || 0})
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => handleEdit(category)}
-                        className="flex items-center gap-1"
-                      >
-                        <Edit className="w-3 h-3" />
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleDelete(category.id, category.name)}
-                        className="bg-red-600 hover:bg-red-700 text-white flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        Delete
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-                {/* Render children recursively */}
-                {category.children && category.children.length > 0 && (
-                  <div className="mt-2">
-                    {category.children.map((child) => {
-                      const fullChild = categories.find(c => c.id === child.id);
-                      return fullChild ? renderCategoryTree(fullChild, level + 1) : null;
-                    })}
-                  </div>
-                )}
+          <Card>
+            <CardHeader className="pb-0">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Category Tree</CardTitle>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Expand, collapse, and manage nested categories with enterprise clarity.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={expandAll}>
+                    Expand All
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={collapseAll}>
+                    Collapse All
+                  </Button>
+                </div>
               </div>
-            );
-            
-            return rootCategories.map(category => renderCategoryTree(category));
-          })()
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="space-y-2">
+                {rootCategories.map((category) => renderCategoryRow(category, 0))}
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>
   );
 }
+
+

@@ -29,8 +29,17 @@ export class CsrfProtection implements NestMiddleware {
       return next();
     }
     
+    const requestPath = (req.originalUrl || req.path || '').split('?')[0];
+    const normalizedPath = requestPath.length > 1 ? requestPath.replace(/\/+$/, '') : requestPath;
+    const altPath = req.path ? (req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path) : normalizedPath;
+
     // Skip if path is exempt
-    if (this.exemptPaths.some(path => req.path === path || req.path.startsWith(path))) {
+    if (this.exemptPaths.some((path) => (
+      normalizedPath === path ||
+      normalizedPath.startsWith(path) ||
+      altPath === path ||
+      altPath.startsWith(path)
+    ))) {
       return next();
     }
     
@@ -40,7 +49,7 @@ export class CsrfProtection implements NestMiddleware {
     
     // Both must exist and match
     if (!tokenFromCookie || !tokenFromHeader || tokenFromCookie !== tokenFromHeader) {
-      this.logger.warn(`CSRF validation failed for ${req.method} ${req.path} from IP: ${req.ip}`);
+      this.logger.warn(`CSRF validation failed for ${req.method} ${requestPath} from IP: ${req.ip}`);
       
       throw new HttpException(
         {

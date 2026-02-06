@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
@@ -10,7 +12,8 @@ import { Switch } from '@/components/ui/Switch';
 import { ImageUpload } from '@/components/ui/ImageUpload';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { Save, ArrowLeft, Globe, Type, AlertCircle, Image as ImageIcon, Shield, ShieldCheck, FileText, Trash2, RefreshCw, Info, ExternalLink, Upload } from 'lucide-react';
+import { Save, ArrowLeft, Globe, Type, AlertCircle, Shield, ShieldCheck, FileText, Trash2, RefreshCw, Info, ExternalLink, Upload, Bell } from 'lucide-react';
+import { getErrorMessage } from '@/lib/error-utils';
 
 type VerificationFile = {
   platform: string;
@@ -21,39 +24,307 @@ type VerificationFile = {
   publicUrl: string;
 };
 
+type HomePageLayout = 'single' | 'dual';
+type CaptchaType = 'recaptcha-v2' | 'recaptcha-v3' | 'cloudflare';
+type AiMode = 'standard' | 'go' | 'god' | 'enterprise';
+
+type CookieConsentConfig = {
+  title: string;
+  description: string;
+  policyUrl: string;
+};
+
+type NotificationConfig = {
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+  browserEnabled: boolean;
+  requireBrowserOptIn: boolean;
+};
+
+type SettingsState = {
+  siteName: string;
+  description: string;
+  seoKeywords: string;
+  footerText: string;
+  homePageLayout: HomePageLayout;
+  homePageId: string;
+  blogPageId: string;
+  topBarEnabled: boolean;
+  logo: string;
+  favicon: string;
+  captchaType: CaptchaType;
+  recaptchaV2SiteKey: string;
+  recaptchaV2SecretKey: string;
+  recaptchaV3SiteKey: string;
+  recaptchaV3SecretKey: string;
+  recaptchaSiteKey: string;
+  recaptchaSecretKey: string;
+  forceHttps: boolean;
+  googleSiteVerification: string;
+  bingSiteVerification: string;
+  yandexSiteVerification: string;
+  pinterestVerification: string;
+  facebookDomainVerification: string;
+  customVerificationTag: string;
+  cookieConsentEnabled: boolean;
+  cookieConsentConfig: CookieConsentConfig;
+  notificationConfig: NotificationConfig;
+  aiMode: AiMode;
+  aiLearningLevel: number;
+  aiSelfLearningEnabled: boolean;
+};
+
+type SettingsSavePayload = {
+  siteName: string;
+  description: string;
+  seoKeywords: string;
+  footerText: string;
+  logo: string | null;
+  favicon: string | null;
+  topBarEnabled: boolean;
+  homePageLayout: HomePageLayout;
+  homePageId: string | null;
+  blogPageId: string | null;
+  captchaType: CaptchaType;
+  recaptchaV2SiteKey: string | null;
+  recaptchaV2SecretKey: string | null;
+  recaptchaV3SiteKey: string | null;
+  recaptchaV3SecretKey: string | null;
+  recaptchaSiteKey: string | null;
+  recaptchaSecretKey: string | null;
+  forceHttps: boolean;
+  googleSiteVerification: string | null;
+  bingSiteVerification: string | null;
+  yandexSiteVerification: string | null;
+  pinterestVerification: string | null;
+  facebookDomainVerification: string | null;
+  customVerificationTag: string | null;
+  cookieConsentEnabled: boolean;
+  cookieConsentConfig: CookieConsentConfig;
+  notificationConfig: NotificationConfig;
+  aiMode: AiMode;
+  aiLearningLevel: number;
+  aiSelfLearningEnabled: boolean;
+};
+
+type PageSummary = {
+  id: string;
+  title: string;
+  status?: string;
+};
+
+const INITIAL_SETTINGS: SettingsState = { 
+  siteName: '', 
+  description: '', 
+  seoKeywords: '', 
+  footerText: '',
+  homePageLayout: 'single',
+  homePageId: '',
+  blogPageId: '',
+  topBarEnabled: false,
+  logo: '',
+  favicon: '',
+  captchaType: 'recaptcha-v2',
+  recaptchaV2SiteKey: '',
+  recaptchaV2SecretKey: '',
+  recaptchaV3SiteKey: '',
+  recaptchaV3SecretKey: '',
+  recaptchaSiteKey: '',
+  recaptchaSecretKey: '',
+  forceHttps: false,
+  googleSiteVerification: '',
+  bingSiteVerification: '',
+  yandexSiteVerification: '',
+  pinterestVerification: '',
+  facebookDomainVerification: '',
+  customVerificationTag: '',
+  cookieConsentEnabled: true,
+  cookieConsentConfig: {
+    title: 'Cookie Preferences',
+    description: 'We use cookies to enhance performance, analyze traffic, and personalize your experience. You can update your preferences at any time.',
+    policyUrl: '/privacy-policy',
+  },
+  notificationConfig: {
+    inAppEnabled: true,
+    emailEnabled: true,
+    browserEnabled: false,
+    requireBrowserOptIn: true,
+  },
+  aiMode: 'standard',
+  aiLearningLevel: 3,
+  aiSelfLearningEnabled: false,
+};
+
+const DEFAULT_COOKIE_CONFIG: CookieConsentConfig = {
+  title: 'Cookie Preferences',
+  description: 'We use cookies to enhance performance, analyze traffic, and personalize your experience. You can update your preferences at any time.',
+  policyUrl: '/privacy-policy',
+};
+
+const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
+  inAppEnabled: true,
+  emailEnabled: true,
+  browserEnabled: false,
+  requireBrowserOptIn: true,
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseBoolean = (value: unknown, fallback = false): boolean => (
+  typeof value === 'boolean' ? value : fallback
+);
+
+const parseNumber = (value: unknown, fallback = 0): number => (
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
+
+const parseAiMode = (value: unknown): AiMode => {
+  if (value === 'go' || value === 'god' || value === 'enterprise' || value === 'standard') {
+    return value;
+  }
+  return 'standard';
+};
+
+const parseCookieConsentConfig = (value: unknown): CookieConsentConfig => {
+  if (!isRecord(value)) {
+    return DEFAULT_COOKIE_CONFIG;
+  }
+  return {
+    title: parseString(value.title, DEFAULT_COOKIE_CONFIG.title),
+    description: parseString(value.description, DEFAULT_COOKIE_CONFIG.description),
+    policyUrl: parseString(value.policyUrl, DEFAULT_COOKIE_CONFIG.policyUrl),
+  };
+};
+
+const parseNotificationConfig = (value: unknown): NotificationConfig => {
+  if (!isRecord(value)) {
+    return DEFAULT_NOTIFICATION_CONFIG;
+  }
+  return {
+    inAppEnabled: parseBoolean(value.inAppEnabled, DEFAULT_NOTIFICATION_CONFIG.inAppEnabled),
+    emailEnabled: parseBoolean(value.emailEnabled, DEFAULT_NOTIFICATION_CONFIG.emailEnabled),
+    browserEnabled: parseBoolean(value.browserEnabled, DEFAULT_NOTIFICATION_CONFIG.browserEnabled),
+    requireBrowserOptIn: parseBoolean(value.requireBrowserOptIn, DEFAULT_NOTIFICATION_CONFIG.requireBrowserOptIn),
+  };
+};
+
+const parseLearningLevel = (value: unknown): number => {
+  const parsed = parseNumber(value, 3);
+  if (parsed < 1) return 1;
+  if (parsed > 7) return 7;
+  return Math.round(parsed);
+};
+
+const parseSettings = (value: unknown): SettingsState => {
+  if (!isRecord(value)) {
+    return INITIAL_SETTINGS;
+  }
+  const recaptchaSiteKey = parseString(value.recaptchaSiteKey);
+  const recaptchaSecretKey = parseString(value.recaptchaSecretKey);
+  const homePageLayoutRaw = parseString(value.homePageLayout);
+  const captchaTypeRaw = parseString(value.captchaType);
+  const homePageLayout: HomePageLayout = homePageLayoutRaw === 'dual' ? 'dual' : 'single';
+  const captchaType: CaptchaType = captchaTypeRaw === 'recaptcha-v3' || captchaTypeRaw === 'cloudflare'
+    ? captchaTypeRaw
+    : 'recaptcha-v2';
+
+  return {
+    siteName: parseString(value.siteName),
+    description: parseString(value.description),
+    seoKeywords: parseString(value.seoKeywords),
+    footerText: parseString(value.footerText),
+    homePageLayout,
+    homePageId: parseString(value.homePageId),
+    blogPageId: parseString(value.blogPageId),
+    topBarEnabled: parseBoolean(value.topBarEnabled),
+    logo: parseString(value.logo),
+    favicon: parseString(value.favicon),
+    captchaType,
+    recaptchaV2SiteKey: parseString(value.recaptchaV2SiteKey) || recaptchaSiteKey,
+    recaptchaV2SecretKey: parseString(value.recaptchaV2SecretKey) || recaptchaSecretKey,
+    recaptchaV3SiteKey: parseString(value.recaptchaV3SiteKey),
+    recaptchaV3SecretKey: parseString(value.recaptchaV3SecretKey),
+    recaptchaSiteKey,
+    recaptchaSecretKey,
+    forceHttps: parseBoolean(value.forceHttps),
+    googleSiteVerification: parseString(value.googleSiteVerification),
+    bingSiteVerification: parseString(value.bingSiteVerification),
+    yandexSiteVerification: parseString(value.yandexSiteVerification),
+    pinterestVerification: parseString(value.pinterestVerification),
+    facebookDomainVerification: parseString(value.facebookDomainVerification),
+    customVerificationTag: parseString(value.customVerificationTag),
+    cookieConsentEnabled: parseBoolean(value.cookieConsentEnabled, true),
+    cookieConsentConfig: parseCookieConsentConfig(value.cookieConsentConfig),
+    notificationConfig: parseNotificationConfig(value.notificationConfig),
+    aiMode: parseAiMode(value.aiMode),
+    aiLearningLevel: parseLearningLevel(value.aiLearningLevel),
+    aiSelfLearningEnabled: parseBoolean(value.aiSelfLearningEnabled),
+  };
+};
+
+const parsePageSummary = (value: unknown): PageSummary | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    title: parseString(value.title, 'Untitled'),
+    status: parseString(value.status),
+  };
+};
+
+const extractPagesList = (value: unknown): PageSummary[] => {
+  let pagesList: unknown[] = [];
+  if (Array.isArray(value)) {
+    pagesList = value;
+  } else if (isRecord(value)) {
+    if (Array.isArray(value.items)) {
+      pagesList = value.items;
+    } else if (Array.isArray(value.pages)) {
+      pagesList = value.pages;
+    }
+  }
+  return pagesList.map(parsePageSummary).filter((page): page is PageSummary => !!page);
+};
+
+const parseVerificationFile = (value: unknown): VerificationFile | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const platform = parseString(value.platform);
+  const filename = parseString(value.filename);
+  if (!platform || !filename) {
+    return null;
+  }
+  return {
+    platform,
+    filename,
+    description: parseString(value.description),
+    uploadedAt: parseString(value.uploadedAt),
+    size: parseNumber(value.size),
+    publicUrl: parseString(value.publicUrl),
+  };
+};
+
 export default function SettingsPage() {
   const router = useRouter();
   const { success, error: showError } = useToast();
-  const [settings, setSettings] = useState({ 
-    siteName: '', 
-    description: '', 
-    seoKeywords: '', 
-    footerText: '',
-    homePageLayout: 'single',
-    homePageId: '',
-    blogPageId: '',
-    topBarEnabled: false,
-    logo: '',
-    favicon: '',
-    captchaType: 'recaptcha-v2',
-    recaptchaV2SiteKey: '',
-    recaptchaV2SecretKey: '',
-    recaptchaV3SiteKey: '',
-    recaptchaV3SecretKey: '',
-    recaptchaSiteKey: '',
-    recaptchaSecretKey: '',
-    forceHttps: false,
-    googleSiteVerification: '',
-    bingSiteVerification: '',
-    yandexSiteVerification: '',
-    pinterestVerification: '',
-    facebookDomainVerification: '',
-    customVerificationTag: '',
-  });
-  const [pages, setPages] = useState<any[]>([]);
+  const [settings, setSettings] = useState<SettingsState>(INITIAL_SETTINGS);
+  const [pages, setPages] = useState<PageSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageTone, setMessageTone] = useState<'success' | 'error' | ''>('');
   
   // File Upload State
   const [verificationFiles, setVerificationFiles] = useState<VerificationFile[]>([]);
@@ -68,73 +339,41 @@ export default function SettingsPage() {
       const params = new URLSearchParams({ status: 'PUBLISHED' });
       const data = await fetchAPI(`/pages?${params.toString()}`, { redirectOn401: false, cache: 'no-store' });
 
-      let pagesList: any[] = [];
-      if (Array.isArray(data)) {
-        pagesList = data;
-      } else if (data?.items && Array.isArray(data.items)) {
-        pagesList = data.items;
-      } else if (data?.pages && Array.isArray(data.pages)) {
-        pagesList = data.pages;
-      }
-
-      const publishedPages = pagesList.filter((page: any) => page?.status === 'PUBLISHED');
+      const pagesList = extractPagesList(data);
+      const publishedPages = pagesList.filter((page) => page.status === 'PUBLISHED');
       setPages(publishedPages);
-    } catch (e: any) {
-      console.error('❌ Unexpected error loading pages:', e);
+    } catch (error: unknown) {
+      logger.error('Unexpected error loading pages', error);
       setPages([]);
+      showError(getErrorMessage(error, 'Failed to load pages'));
     }
-  }, []);
-
+  }, [showError]);
   const loadSettings = useCallback(async () => {
     try {
       const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
-      if (data) {
-        setSettings({
-          siteName: data.siteName || '',
-          description: data.description || '',
-          seoKeywords: data.seoKeywords || '',
-          footerText: data.footerText || '',
-          homePageLayout: data.homePageLayout || 'single',
-          homePageId: data.homePageId || '',
-          blogPageId: data.blogPageId || '',
-          topBarEnabled: data.topBarEnabled || false,
-          logo: data.logo || '',
-          favicon: data.favicon || '',
-          captchaType: data.captchaType || 'recaptcha-v2',
-          recaptchaV2SiteKey: data.recaptchaV2SiteKey || data.recaptchaSiteKey || '',
-          recaptchaV2SecretKey: data.recaptchaV2SecretKey || data.recaptchaSecretKey || '',
-          recaptchaV3SiteKey: data.recaptchaV3SiteKey || '',
-          recaptchaV3SecretKey: data.recaptchaV3SecretKey || '',
-          recaptchaSiteKey: data.recaptchaSiteKey || '',
-          recaptchaSecretKey: data.recaptchaSecretKey || '',
-          forceHttps: data.forceHttps || false,
-          googleSiteVerification: data.googleSiteVerification || '',
-          bingSiteVerification: data.bingSiteVerification || '',
-          yandexSiteVerification: data.yandexSiteVerification || '',
-          pinterestVerification: data.pinterestVerification || '',
-          facebookDomainVerification: data.facebookDomainVerification || '',
-          customVerificationTag: data.customVerificationTag || '',
-        });
-      }
-    } catch (e) {
-      console.error(e);
-      showError('Failed to load settings. Please refresh the page.');
+      setSettings(parseSettings(data));
+    } catch (error: unknown) {
+      logger.error('Failed to load settings', error);
+      showError(getErrorMessage(error, 'Failed to load settings. Please refresh the page.'));
     } finally {
       setLoading(false);
     }
   }, [showError]);
-
   const loadVerificationFiles = useCallback(async () => {
     try {
       const data = await fetchAPI('/settings/verification-files', { redirectOn401: false, cache: 'no-store' });
       if (Array.isArray(data)) {
-        setVerificationFiles(data);
+        const files = data
+          .map(parseVerificationFile)
+          .filter((file): file is VerificationFile => !!file);
+        setVerificationFiles(files);
+      } else {
+        setVerificationFiles([]);
       }
-    } catch (error) {
-      console.error('Failed to load verification files:', error);
+    } catch (error: unknown) {
+      logger.error('Failed to load verification files', error);
     }
   }, []);
-
   useEffect(() => {
     loadSettings();
     loadPages();
@@ -143,9 +382,12 @@ export default function SettingsPage() {
 
   async function handleSave() {
     setMessage('');
+    setMessageTone('');
     setSaving(true);
     try {
-      const settingsToSave: any = {
+      const homePageId = settings.homePageId.trim() ? settings.homePageId : null;
+      const blogPageId = settings.blogPageId.trim() ? settings.blogPageId : null;
+      const settingsToSave: SettingsSavePayload = {
         siteName: settings.siteName,
         description: settings.description,
         seoKeywords: settings.seoKeywords,
@@ -153,7 +395,9 @@ export default function SettingsPage() {
         logo: settings.logo || null,
         favicon: settings.favicon || null,
         topBarEnabled: settings.topBarEnabled,
-        homePageLayout: settings.homePageLayout || 'single',
+        homePageLayout: settings.homePageLayout,
+        homePageId,
+        blogPageId,
         captchaType: settings.captchaType,
         recaptchaV2SiteKey: settings.recaptchaV2SiteKey || null,
         recaptchaV2SecretKey: settings.recaptchaV2SecretKey || null,
@@ -168,36 +412,29 @@ export default function SettingsPage() {
         pinterestVerification: settings.pinterestVerification || null,
         facebookDomainVerification: settings.facebookDomainVerification || null,
         customVerificationTag: settings.customVerificationTag || null,
+        cookieConsentEnabled: settings.cookieConsentEnabled,
+        cookieConsentConfig: settings.cookieConsentConfig,
+        notificationConfig: settings.notificationConfig,
+        aiMode: settings.aiMode,
+        aiLearningLevel: settings.aiLearningLevel,
+        aiSelfLearningEnabled: settings.aiSelfLearningEnabled,
       };
-      
-      settingsToSave.homePageId = settings.homePageId && settings.homePageId.trim() !== '' 
-        ? settings.homePageId 
-        : null;
-      settingsToSave.blogPageId = settings.blogPageId && settings.blogPageId.trim() !== '' 
-        ? settings.blogPageId 
-        : null;
-      
-      const response = await fetchAPI('/settings', {
+
+      await fetchAPI('/settings', {
         method: 'PUT',
         body: JSON.stringify(settingsToSave),
         redirectOn401: false,
         cache: 'no-store',
       });
-      
-      setMessage('✅ Settings saved successfully!');
+
+      setMessage('Settings saved successfully.');
+      setMessageTone('success');
       success('Settings saved successfully!');
-    } catch (e: any) {
-      console.error('Error saving settings - Full error:', e);
-      let errorMsg = 'Failed to save settings';
-      if (e.message) {
-        errorMsg = e.message;
-        if (e.message.includes('API Error:')) {
-          errorMsg = e.message.replace('API Error: ', '');
-        }
-      } else if (typeof e === 'string') {
-        errorMsg = e;
-      }
-      setMessage(`❌ ${errorMsg}`);
+    } catch (error: unknown) {
+      logger.error('Error saving settings', error);
+      const errorMsg = getErrorMessage(error, 'Failed to save settings');
+      setMessage(`Error: ${errorMsg}`);
+      setMessageTone('error');
       showError(errorMsg);
     } finally {
       setSaving(false);
@@ -234,8 +471,9 @@ export default function SettingsPage() {
       setUploadContent('');
       setUploadDescription('');
       await loadVerificationFiles();
-    } catch (error: any) {
-      showError('Upload failed: ' + error.message);
+    } catch (error: unknown) {
+      logger.error('Verification file upload failed', error);
+      showError(`Upload failed: ${getErrorMessage(error, 'Unknown error')}`);
     } finally {
       setUploadingFile(false);
     }
@@ -252,8 +490,9 @@ export default function SettingsPage() {
           await fetchAPI(`/settings/verification-files/${platform}`, { method: 'DELETE', redirectOn401: false, cache: 'no-store' });
           success('Verification file deleted successfully!');
           await loadVerificationFiles();
-        } catch (error: any) {
-          showError('Delete failed: ' + error.message);
+        } catch (error: unknown) {
+          logger.error('Verification file delete failed', error);
+          showError(`Delete failed: ${getErrorMessage(error, 'Unknown error')}`);
         }
       },
       'danger'
@@ -328,14 +567,14 @@ export default function SettingsPage() {
                     <Input 
                       value={settings.footerText} 
                       onChange={(e) => setSettings({...settings, footerText: e.target.value})} 
-                      placeholder="© 2024 Wall Painting Services. All rights reserved."
+                      placeholder="(c) 2024 Wall Painting Services. All rights reserved."
                     />
                  </div>
 
                  <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Blog Layout</label>
                     <div className="flex gap-3">
-                      {['single', 'dual'].map((layout) => (
+                      {(['single', 'dual'] as HomePageLayout[]).map((layout) => (
                         <button
                           key={layout}
                           type="button"
@@ -351,6 +590,7 @@ export default function SettingsPage() {
                       ))}
                     </div>
                     <p className="text-xs text-slate-400">Controls blog listing layout (and homepage when it shows the blog feed).</p>
+                    <p className="text-xs text-slate-400">Dual column enables sidebar widgets automatically.</p>
                  </div>
             </CardContent>
       </Card>
@@ -480,7 +720,7 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium">CAPTCHA Provider</label>
             <select 
               value={settings.captchaType}
-              onChange={(e) => setSettings({...settings, captchaType: e.target.value})}
+              onChange={(e) => setSettings({ ...settings, captchaType: e.target.value as CaptchaType })}
               className="w-full p-2 border rounded-md dark:bg-slate-800 dark:border-slate-700"
             >
               <option value="recaptcha-v2">Google reCAPTCHA v2 (Checkbox)</option>
@@ -530,6 +770,157 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Privacy & Cookie Consent */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5" />
+            Privacy & Cookie Consent
+          </CardTitle>
+          <CardDescription>Manage cookie consent copy and enforcement for visitors.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded border">
+            <div>
+              <div className="font-medium">Enable cookie consent banner</div>
+              <div className="text-sm text-slate-500">Show cookie preferences on first visit.</div>
+            </div>
+            <Switch
+              checked={settings.cookieConsentEnabled}
+              onCheckedChange={(checked) => setSettings({ ...settings, cookieConsentEnabled: checked })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Banner Title</label>
+              <Input
+                value={settings.cookieConsentConfig.title}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    cookieConsentConfig: { ...settings.cookieConsentConfig, title: e.target.value },
+                  })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Policy URL</label>
+              <Input
+                value={settings.cookieConsentConfig.policyUrl}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    cookieConsentConfig: { ...settings.cookieConsentConfig, policyUrl: e.target.value },
+                  })
+                }
+                placeholder="/privacy-policy"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Banner Description</label>
+            <textarea
+              value={settings.cookieConsentConfig.description}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  cookieConsentConfig: { ...settings.cookieConsentConfig, description: e.target.value },
+                })
+              }
+              rows={3}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Notification Channels */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="w-5 h-5" />
+            Notification Channels
+          </CardTitle>
+          <CardDescription>Control delivery channels for Comms Hub notifications.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={settings.notificationConfig.inAppEnabled}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    notificationConfig: {
+                      ...settings.notificationConfig,
+                      inAppEnabled: e.target.checked,
+                    },
+                  })
+                }
+                className="h-4 w-4"
+              />
+              In-app notifications
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={settings.notificationConfig.emailEnabled}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    notificationConfig: {
+                      ...settings.notificationConfig,
+                      emailEnabled: e.target.checked,
+                    },
+                  })
+                }
+                className="h-4 w-4"
+              />
+              Email delivery
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={settings.notificationConfig.browserEnabled}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    notificationConfig: {
+                      ...settings.notificationConfig,
+                      browserEnabled: e.target.checked,
+                    },
+                  })
+                }
+                className="h-4 w-4"
+              />
+              Browser notifications
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={settings.notificationConfig.requireBrowserOptIn}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    notificationConfig: {
+                      ...settings.notificationConfig,
+                      requireBrowserOptIn: e.target.checked,
+                    },
+                  })
+                }
+                className="h-4 w-4"
+              />
+              Require user opt-in
+            </label>
+          </div>
+          <p className="text-xs text-slate-500">
+            Disable a channel to prevent delivery for new Comms Hub campaigns, alerts, and greetings.
+          </p>
         </CardContent>
       </Card>
 
@@ -614,7 +1005,7 @@ export default function SettingsPage() {
                   Files will be automatically served at: <code className="bg-white dark:bg-slate-800 px-1 rounded">example.com/filename.html</code>
                 </div>
                 <div className="text-sm text-blue-600 dark:text-blue-400 mt-2">
-                  <strong>Supported formats:</strong> .html, .txt, .json, .xml • <strong>Maximum size:</strong> 10KB
+                  <strong>Supported formats:</strong> .html, .txt, .json, .xml - <strong>Maximum size:</strong> 10KB
                 </div>
               </div>
             </div>
@@ -714,7 +1105,7 @@ export default function SettingsPage() {
                         </span>
                       </div>
                       <div className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-                        {(file.size / 1024).toFixed(2)} KB • Uploaded {new Date(file.uploadedAt).toLocaleDateString()}
+                        {(file.size / 1024).toFixed(2)} KB - Uploaded {new Date(file.uploadedAt).toLocaleDateString()}
                       </div>
                     </div>
                     
@@ -746,7 +1137,7 @@ export default function SettingsPage() {
       
       <Card>
           <CardFooter className="flex justify-between items-center border-t border-slate-100 dark:border-slate-700 pt-6 bg-slate-50 dark:bg-slate-800 rounded-b-lg">
-              <span className={`text-sm flex items-center ${message.includes('❌') ? 'text-red-600' : message.includes('✅') ? 'text-green-600' : ''}`}>
+              <span className={`text-sm flex items-center ${messageTone === 'error' ? 'text-red-600' : messageTone === 'success' ? 'text-green-600' : ''}`}>
                   {message && <AlertCircle size={14} className="mr-2" />}
                   {message}
               </span>
@@ -758,3 +1149,9 @@ export default function SettingsPage() {
     </div>
   );
 }
+
+
+
+
+
+

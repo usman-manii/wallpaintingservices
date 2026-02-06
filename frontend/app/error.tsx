@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { useEffect } from 'react';
+import logger from '@/lib/logger';
 
 export default function GlobalError({
   error,
@@ -12,8 +13,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Log error to console for debugging
-    console.error('Global error:', error);
+    logger.error('Global error', error, { component: 'GlobalError' });
   }, [error]);
 
   return (
@@ -38,7 +38,7 @@ export default function GlobalError({
             <Link href="/" className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm px-2 py-1">
               Go home
             </Link>
-            <Link href="/auth?mode=login" className="text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm px-2 py-1">
+            <Link href="/login" className="text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm px-2 py-1">
               Sign in
             </Link>
           </div>

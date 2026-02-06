@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -9,6 +11,86 @@ import { Plus, X, Tag, Folder } from 'lucide-react';
 import RichTextEditor from '@/components/editor/RichTextEditor';
 import { useToast } from '@/components/ui/Toast';
 import { fetchAPI } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-utils';
+
+type PostStatus = 'DRAFT' | 'PUBLISHED' | 'SCHEDULED';
+
+type EditPostFormData = {
+  title: string;
+  slug: string;
+  excerpt: string;
+  content: string;
+  featuredImage: string;
+  status: PostStatus;
+  scheduledFor: string;
+  categories: string[];
+  tags: string[];
+};
+
+type OptionItem = {
+  id: string;
+  name: string;
+};
+
+type SeoPreview = {
+  title: string;
+  description: string;
+  readingTime: number;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const parseString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
+const parseOptionItem = (value: unknown): OptionItem | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = parseString(value.id);
+  const name = parseString(value.name);
+  if (!id || !name) {
+    return null;
+  }
+  return { id, name };
+};
+
+const parseOptionList = (value: unknown): OptionItem[] => (
+  Array.isArray(value)
+    ? value.map(parseOptionItem).filter((item): item is OptionItem => !!item)
+    : []
+);
+
+const parseIdList = (value: unknown): string[] => (
+  Array.isArray(value)
+    ? value
+        .map((entry) => (isRecord(entry) ? parseString(entry.id) : ''))
+        .filter((id) => id.length > 0)
+    : []
+);
+
+const parseStatus = (value: unknown): PostStatus => (
+  value === 'PUBLISHED' || value === 'SCHEDULED' ? value : 'DRAFT'
+);
+
+const parseScheduledFor = (value: unknown): string => {
+  const dateString = parseString(value);
+  if (!dateString) {
+    return '';
+  }
+  const parsedDate = new Date(dateString);
+  return Number.isNaN(parsedDate.getTime()) ? '' : parsedDate.toISOString().slice(0, 16);
+};
+
+const parseUploadUrl = (value: unknown): string => {
+  if (!isRecord(value)) {
+    return '';
+  }
+  return parseString(value.url) || parseString(value.path);
+};
 
 export default function EditPostPage() {
   const router = useRouter();
@@ -23,7 +105,7 @@ export default function EditPostPage() {
     setOrigin(window.location.origin);
   }, []);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<EditPostFormData>({
     title: '',
     slug: '',
     excerpt: '',
@@ -31,13 +113,13 @@ export default function EditPostPage() {
     featuredImage: '',
     status: 'DRAFT',
     scheduledFor: '',
-    categories: [] as string[],
-    tags: [] as string[],
+    categories: [],
+    tags: [],
   });
 
-  const [availableCategories, setAvailableCategories] = useState<any[]>([]);
-  const [availableTags, setAvailableTags] = useState<any[]>([]);
-  const [seoPreview, setSeoPreview] = useState({
+  const [availableCategories, setAvailableCategories] = useState<OptionItem[]>([]);
+  const [availableTags, setAvailableTags] = useState<OptionItem[]>([]);
+  const [seoPreview, setSeoPreview] = useState<SeoPreview>({
     title: '',
     description: '',
     readingTime: 0,
@@ -52,64 +134,51 @@ export default function EditPostPage() {
       setLoadingPost(true);
       const post = await fetchAPI(`/blog/admin/posts/${postId}`, { redirectOn401: false, cache: 'no-store' });
 
-      if (!post || !post.id) {
+      if (!isRecord(post)) {
         throw new Error('Post not found.');
       }
+      const postKey = parseString(post.id);
+      if (!postKey) {
+        throw new Error('Post not found.');
+      }
+      const content = parseString(post.content);
       setFormData({
-        title: post.title || '',
-        slug: post.slug || '',
-        excerpt: post.excerpt || '',
-        content: post.content || '',
-        featuredImage: post.featuredImage || '',
-        status: post.status || 'DRAFT',
-        scheduledFor: post.scheduledFor ? new Date(post.scheduledFor).toISOString().slice(0, 16) : '',
-        categories: post.categories?.map((c: any) => c.id) || [],
-        tags: post.tags?.map((t: any) => t.id) || [],
+        title: parseString(post.title),
+        slug: parseString(post.slug),
+        excerpt: parseString(post.excerpt),
+        content,
+        featuredImage: parseString(post.featuredImage),
+        status: parseStatus(post.status),
+        scheduledFor: parseScheduledFor(post.scheduledFor),
+        categories: parseIdList(post.categories),
+        tags: parseIdList(post.tags),
       });
       setSeoPreview({
-        title: post.title?.substring(0, 60) || '',
-        description: post.excerpt?.substring(0, 155) || '',
-        readingTime: Math.ceil((post.content?.split(/\s+/).length || 0) / 200),
+        title: parseString(post.title).substring(0, 60),
+        description: parseString(post.excerpt).substring(0, 155),
+        readingTime: Math.ceil((content.split(/\s+/).filter(Boolean).length || 0) / 200),
       });
-    } catch (error: any) {
-      console.error('Error fetching post:', error);
-      showError(error.message || 'Failed to load post for editing.');
+    } catch (error: unknown) {
+      logger.error('Error fetching post:', error);
+      showError(getErrorMessage(error, 'Failed to load post for editing.'));
     } finally {
       setLoadingPost(false);
     }
-  }, [postId]);
+  }, [postId, showError]);
 
   const fetchCategoriesAndTags = useCallback(async () => {
     try {
-      // Temporarily using mock data - replace with actual API calls
-      setAvailableCategories([
-        { id: '1', name: 'Technology', slug: 'technology' },
-        { id: '2', name: 'Design', slug: 'design' },
-        { id: '3', name: 'Business', slug: 'business' },
+      const [categories, tags] = await Promise.all([
+        fetchAPI('/categories', { redirectOn401: false, cache: 'no-store' }).catch(() => []),
+        fetchAPI('/blog/admin/tags', { redirectOn401: false, cache: 'no-store' }).catch(() => []),
       ]);
-      
-      setAvailableTags([
-        { id: '1', name: 'Tutorial', slug: 'tutorial' },
-        { id: '2', name: 'Guide', slug: 'guide' },
-        { id: '3', name: 'Tips', slug: 'tips' },
-      ]);
-      
-      // Uncomment when backend endpoints are ready:
-      // const catRes = await fetch('http://localhost:3001/categories', {
-      //   headers: { 'Authorization': `Bearer ${token}` }
-      // });
-      // const categories = await catRes.json();
-      // setAvailableCategories(categories);
-
-      // const tagRes = await fetch('http://localhost:3001/blog/admin/tags', {
-      //   headers: { 'Authorization': `Bearer ${token}` }
-      // });
-      // const tags = await tagRes.json();
-      // setAvailableTags(tags);
-    } catch (error) {
-      console.error('Error fetching categories/tags:', error);
+      setAvailableCategories(parseOptionList(categories));
+      setAvailableTags(parseOptionList(tags));
+    } catch (error: unknown) {
+      logger.error('Error fetching categories/tags:', error);
+      showError(getErrorMessage(error, 'Failed to load categories or tags'));
     }
-  }, []);
+  }, [showError]);
 
   // Fetch post data
   useEffect(() => {
@@ -131,16 +200,19 @@ export default function EditPostPage() {
         redirectOn401: false,
         cache: 'no-store',
       });
-      if (newCat && newCat.id) {
-        setAvailableCategories([...availableCategories, newCat]);
-        setFormData(prev => ({ ...prev, categories: [...prev.categories, newCat.id] }));
+      const parsedCategory = parseOptionItem(newCat);
+      if (parsedCategory) {
+        setAvailableCategories([...availableCategories, parsedCategory]);
+        setFormData(prev => ({ ...prev, categories: [...prev.categories, parsedCategory.id] }));
         setNewCategoryName('');
         setShowNewCategory(false);
         success('Category created successfully');
+      } else {
+        showError('Category created, but the response was missing required data.');
       }
-    } catch (error: any) {
-      console.error('Error creating category:', error);
-      showError(error.message || 'Failed to create category');
+    } catch (error: unknown) {
+      logger.error('Error creating category:', error);
+      showError(getErrorMessage(error, 'Failed to create category'));
     }
   };
 
@@ -156,16 +228,19 @@ export default function EditPostPage() {
         redirectOn401: false,
         cache: 'no-store',
       });
-      if (newTag && newTag.id) {
-        setAvailableTags([...availableTags, newTag]);
-        setFormData(prev => ({ ...prev, tags: [...prev.tags, newTag.id] }));
+      const parsedTag = parseOptionItem(newTag);
+      if (parsedTag) {
+        setAvailableTags([...availableTags, parsedTag]);
+        setFormData(prev => ({ ...prev, tags: [...prev.tags, parsedTag.id] }));
         setNewTagName('');
         setShowNewTag(false);
         success('Tag created successfully');
+      } else {
+        showError('Tag created, but the response was missing required data.');
       }
-    } catch (error: any) {
-      console.error('Error creating tag:', error);
-      showError(error.message || 'Failed to create tag');
+    } catch (error: unknown) {
+      logger.error('Error creating tag:', error);
+      showError(getErrorMessage(error, 'Failed to create tag'));
     }
   };
 
@@ -216,11 +291,15 @@ export default function EditPostPage() {
         redirectOn401: false,
       });
 
-      // Return full URL if relative, or use as-is if absolute
-      return data.url?.startsWith('http') ? data.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${data.url}`;
-    } catch (error: any) {
-      console.error('Image upload error:', error);
-      throw new Error(error.message || 'Upload failed');
+      const uploadedUrl = parseUploadUrl(data);
+      if (!uploadedUrl) {
+        throw new Error('Upload succeeded but no URL was returned');
+      }
+      const baseUrl = origin || (typeof window !== 'undefined' ? window.location.origin : '');
+      return uploadedUrl.startsWith('http') ? uploadedUrl : `${baseUrl}${uploadedUrl}`;
+    } catch (error: unknown) {
+      logger.error('Image upload error:', error);
+      throw new Error(getErrorMessage(error, 'Upload failed'));
     }
   };
 
@@ -264,9 +343,9 @@ export default function EditPostPage() {
 
       success('Post updated successfully!');
       router.push('/dashboard/posts');
-    } catch (error: any) {
-      console.error('Error updating post:', error);
-      showError(error.message || 'Failed to update post. Please try again.');
+    } catch (error: unknown) {
+      logger.error('Error updating post:', error);
+      showError(getErrorMessage(error, 'Failed to update post. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -576,118 +655,118 @@ export default function EditPostPage() {
               <CardTitle>Publishing Options</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Publish Type Selection */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-                  Publishing Type
-                </label>
-                <div className="grid md:grid-cols-3 gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, status: 'DRAFT', scheduledFor: '' }))}
-                    className={`p-4 border-2 rounded-lg transition-all ${
-                      formData.status === 'DRAFT' && !formData.scheduledFor
-                        ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20'
-                        : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'
-                    }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-2xl mb-2">📝</div>
-                      <div className="font-semibold text-slate-900 dark:text-white">Save as Draft</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Save for later</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, status: 'PUBLISHED', scheduledFor: '' }))}
-                    className={`p-4 border-2 rounded-lg transition-all ${
-                      formData.status === 'PUBLISHED'
-                        ? 'border-green-600 bg-green-50 dark:bg-green-900/20'
-                        : 'border-slate-300 dark:border-slate-600 hover:border-green-400'
-                    }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-2xl mb-2">🚀</div>
-                      <div className="font-semibold text-slate-900 dark:text-white">Publish Immediately</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Go live now</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const tomorrow = new Date();
-                      tomorrow.setDate(tomorrow.getDate() + 1);
-                      tomorrow.setHours(9, 0, 0, 0);
-                      setFormData(prev => ({ 
-                        ...prev, 
-                        status: 'SCHEDULED',
-                        scheduledFor: tomorrow.toISOString().slice(0, 16)
-                      }));
-                    }}
-                    className={`p-4 border-2 rounded-lg transition-all ${
-                      formData.scheduledFor
-                        ? 'border-orange-600 bg-orange-50 dark:bg-orange-900/20'
-                        : 'border-slate-300 dark:border-slate-600 hover:border-orange-400'
-                    }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-2xl mb-2">⏰</div>
-                      <div className="font-semibold text-slate-900 dark:text-white">Schedule for Later</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Pick date & time</div>
-                    </div>
-                  </button>
-                </div>
-              </div>
-
-              {/* Scheduled Publishing DateTime Picker */}
-              {formData.scheduledFor && (
-                <div className="mt-4 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    📅 Schedule Date & Time
+                {/* Publish Type Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                    Publishing Type
                   </label>
-                  <Input
-                    type="datetime-local"
-                    value={formData.scheduledFor}
-                    onChange={(e) => setFormData(prev => ({ ...prev, scheduledFor: e.target.value, status: 'SCHEDULED' }))}
-                    className="mb-2"
-                  />
-                  <p className="text-sm text-orange-700 dark:text-orange-300">
-                    ⏰ This post will be automatically published on: <strong>{new Date(formData.scheduledFor).toLocaleString()}</strong>
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setFormData(prev => ({ ...prev, scheduledFor: '', status: 'DRAFT' }))}
-                    className="mt-2"
-                  >
-                    Clear Schedule
-                  </Button>
-                </div>
-              )}
+                  <div className="grid md:grid-cols-3 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, status: 'DRAFT', scheduledFor: '' }))}
+                      className={`p-4 border-2 rounded-lg transition-all ${
+                        formData.status === 'DRAFT' && !formData.scheduledFor
+                          ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                          : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'
+                      }`}
+                    >
+                      <div className="text-center">
+                        <div className="text-2xl mb-2">Draft</div>
+                        <div className="font-semibold text-slate-900 dark:text-white">Save as Draft</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Save for later</div>
+                      </div>
+                    </button>
 
-              {/* Status Info */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="font-medium text-slate-700 dark:text-slate-300">Current Status:</span>
-                  {formData.scheduledFor ? (
-                    <span className="text-orange-600 dark:text-orange-400 font-semibold">
-                      ⏰ Scheduled
-                    </span>
-                  ) : formData.status === 'PUBLISHED' ? (
-                    <span className="text-green-600 dark:text-green-400 font-semibold">
-                      ✅ Will Publish Immediately
-                    </span>
-                  ) : (
-                    <span className="text-slate-600 dark:text-slate-400 font-semibold">
-                      📝 Draft
-                    </span>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, status: 'PUBLISHED', scheduledFor: '' }))}
+                      className={`p-4 border-2 rounded-lg transition-all ${
+                        formData.status === 'PUBLISHED'
+                          ? 'border-green-600 bg-green-50 dark:bg-green-900/20'
+                          : 'border-slate-300 dark:border-slate-600 hover:border-green-400'
+                      }`}
+                    >
+                      <div className="text-center">
+                        <div className="text-2xl mb-2">Publish</div>
+                        <div className="font-semibold text-slate-900 dark:text-white">Publish Immediately</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Go live now</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const tomorrow = new Date();
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        tomorrow.setHours(9, 0, 0, 0);
+                        setFormData(prev => ({ 
+                          ...prev, 
+                          status: 'SCHEDULED',
+                          scheduledFor: tomorrow.toISOString().slice(0, 16)
+                        }));
+                      }}
+                      className={`p-4 border-2 rounded-lg transition-all ${
+                        formData.scheduledFor
+                          ? 'border-orange-600 bg-orange-50 dark:bg-orange-900/20'
+                          : 'border-slate-300 dark:border-slate-600 hover:border-orange-400'
+                      }`}
+                    >
+                      <div className="text-center">
+                        <div className="text-2xl mb-2">Schedule</div>
+                        <div className="font-semibold text-slate-900 dark:text-white">Schedule for Later</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Pick date & time</div>
+                      </div>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
+
+                {/* Scheduled Publishing DateTime Picker */}
+                {formData.scheduledFor && (
+                  <div className="mt-4 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Schedule Date & Time
+                    </label>
+                    <Input
+                      type="datetime-local"
+                      value={formData.scheduledFor}
+                      onChange={(e) => setFormData(prev => ({ ...prev, scheduledFor: e.target.value, status: 'SCHEDULED' }))}
+                      className="mb-2"
+                    />
+                    <p className="text-sm text-orange-700 dark:text-orange-300">
+                      This post will be automatically published on: <strong>{new Date(formData.scheduledFor).toLocaleString()}</strong>
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setFormData(prev => ({ ...prev, scheduledFor: '', status: 'DRAFT' }))}
+                      className="mt-2"
+                    >
+                      Clear Schedule
+                    </Button>
+                  </div>
+                )}
+
+                {/* Status Info */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-medium text-slate-700 dark:text-slate-300">Current Status:</span>
+                    {formData.scheduledFor ? (
+                      <span className="text-orange-600 dark:text-orange-400 font-semibold">
+                        Scheduled
+                      </span>
+                    ) : formData.status === 'PUBLISHED' ? (
+                      <span className="text-green-600 dark:text-green-400 font-semibold">
+                        Will Publish Immediately
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 dark:text-slate-400 font-semibold">
+                        Draft
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
           </Card>
 
           {/* Action Buttons */}
@@ -714,11 +793,11 @@ export default function EditPostPage() {
               {loading ? (
                 'Updating...'
               ) : formData.scheduledFor ? (
-                <>⏰ Update & Schedule</>
+                <>Update & Schedule</>
               ) : formData.status === 'PUBLISHED' ? (
-                <>🚀 Update & Publish</>
+                <>Update & Publish</>
               ) : (
-                <>📝 Update Draft</>
+                <>Update Draft</>
               )}
             </Button>
           </div>
@@ -727,3 +806,11 @@ export default function EditPostPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+

@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -41,10 +43,10 @@ export default function EmailApprovalsList() {
         const data = await response.json();
         setRequests(data);
       } else {
-        console.error('Failed to fetch requests');
+        logger.error('Failed to fetch requests');
       }
     } catch (error) {
-      console.error('Error fetching requests:', error);
+      logger.error('Error fetching requests:', error);
     } finally {
       setLoading(false);
     }
@@ -147,3 +149,4 @@ export default function EmailApprovalsList() {
     </div>
   );
 }
+

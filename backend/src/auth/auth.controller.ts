@@ -10,7 +10,8 @@ import { Roles } from './roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from './user.service';
 import { CaptchaService } from '../captcha/captcha.service';
-import { Response, CookieOptions } from 'express';
+import { Response, CookieOptions, Request as ExpressRequest } from 'express';
+import { AuthenticatedRequest } from '../common/types';
 
 /**
  * Authentication Controller
@@ -38,7 +39,7 @@ export class AuthController {
    */
   @Public()
   @Post('login')
-  async login(@Body() req: LoginDto, @Request() request: any, @Res({ passthrough: true }) res: Response) {
+  async login(@Body() req: LoginDto, @Request() request: ExpressRequest, @Res({ passthrough: true }) res: Response) {
     // Verify CAPTCHA if provided
     if (req.captchaToken) {
        const ip = this.getClientIp(request);
@@ -58,7 +59,10 @@ export class AuthController {
     if (!user) {
         throw new BadRequestException('Invalid email or password');
     }
-    const result = await this.authService.login(user);
+    const result = await this.authService.login(user, {
+      ipAddress: this.getClientIp(request),
+      userAgent: request.headers['user-agent'],
+    });
     this.setAuthCookies(res, result.access_token, result.refresh_token);
     this.setCsrfCookie(res);
     return { user: result.user };
@@ -73,7 +77,7 @@ export class AuthController {
    */
   @Public()
   @Post('register')
-  async register(@Body() req: RegisterDto, @Request() request: any, @Res({ passthrough: true }) res: Response) {
+  async register(@Body() req: RegisterDto, @Request() request: ExpressRequest, @Res({ passthrough: true }) res: Response) {
     // Verify CAPTCHA if provided
     if (req.captchaToken) {
        const ip = this.getClientIp(request);
@@ -91,16 +95,20 @@ export class AuthController {
 
     try {
       const user = await this.authService.register(req);
-      const loginResult = await this.authService.login(user as any);
+      const loginResult = await this.authService.login(user, {
+        ipAddress: this.getClientIp(request),
+        userAgent: request.headers['user-agent'],
+      });
       this.setAuthCookies(res, loginResult.access_token, loginResult.refresh_token);
       this.setCsrfCookie(res);
       return { user: loginResult.user };
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Provide user-friendly error messages
-      if (error.message?.includes('Unique constraint')) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('Unique constraint')) {
         throw new BadRequestException('An account with this email or username already exists.');
       }
-      throw error;
+      throw error instanceof Error ? error : new BadRequestException(message);
     }
   }
 
@@ -125,7 +133,7 @@ export class AuthController {
 
   @Public()
   @Post('refresh')
-  async refresh(@Request() req: any, @Res({ passthrough: true }) res: Response) {
+  async refresh(@Request() req: ExpressRequest, @Res({ passthrough: true }) res: Response) {
     const refreshToken = req.cookies?.['refresh_token'];
     if (!refreshToken) {
       throw new BadRequestException('Refresh token missing');
@@ -138,10 +146,14 @@ export class AuthController {
 
   @Public()
   @Post('logout')
-  async logout(@Res({ passthrough: true }) res: Response) {
+  async logout(@Request() req: ExpressRequest, @Res({ passthrough: true }) res: Response) {
+    const refreshToken = req.cookies?.['refresh_token'];
+    if (refreshToken) {
+      await this.authService.revokeSession(refreshToken);
+    }
     const cookieOptions = this.buildCookieOptions();
 
-    // Clear both primary and legacy cookie paths so no stale tokens linger
+    // Clear both cookie paths so no stale tokens linger
     res.cookie('access_token', '', { ...cookieOptions, maxAge: 0, path: '/' });
     res.cookie('refresh_token', '', { ...cookieOptions, maxAge: 0, path: '/' });
     res.cookie('refresh_token', '', { ...cookieOptions, maxAge: 0, path: '/auth/refresh' });
@@ -150,13 +162,38 @@ export class AuthController {
     return { message: 'Logged out' };
   }
 
+  @Post('verify-email/request')
+  async requestEmailVerification(@Request() req: AuthenticatedRequest) {
+    return this.authService.requestEmailVerification(req.user.id);
+  }
+
+  @Public()
+  @Post('verify-email/confirm')
+  async confirmEmailVerification(@Body() body: { token: string }) {
+    if (!body?.token) {
+      throw new BadRequestException('Verification token is required');
+    }
+    return this.authService.verifyEmail(body.token);
+  }
+
+  @Public()
+  @Post('verify-email/code')
+  async confirmEmailVerificationByCode(@Body() body: { email?: string; code?: string }) {
+    const email = body?.email?.trim();
+    const code = body?.code?.trim();
+    if (!email || !code) {
+      throw new BadRequestException('Email and verification code are required');
+    }
+    return this.authService.verifyEmailCode(email, code);
+  }
+
   @Get('profile')
-  getProfile(@Request() req) {
+  getProfile(@Request() req: AuthenticatedRequest) {
     return this.userService.getUserById(req.user.id);
   }
 
   @Put('profile')
-  updateProfile(@Request() req, @Body() data: UpdateUserProfileDto) {
+  updateProfile(@Request() req: AuthenticatedRequest, @Body() data: UpdateUserProfileDto) {
     return this.userService.updateUserProfile(req.user.id, data);
   }
   
@@ -198,7 +235,7 @@ export class AuthController {
 
   // Email Change Workflow
   @Post('email-change/request')
-  async requestEmailChange(@Request() req, @Body() data: RequestEmailChangeDto) {
+  async requestEmailChange(@Request() req: AuthenticatedRequest, @Body() data: RequestEmailChangeDto) {
     return this.userService.requestEmailChange(req.user.id, data);
   }
 
@@ -222,11 +259,11 @@ export class AuthController {
     return this.userService.approveEmailChange(data.requestId);
   }
 
-  private getClientIp(req: any): string {
+  private getClientIp(req: ExpressRequest): string {
     return (
       (req.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
       req.ip ||
-      req.connection?.remoteAddress ||
+      req.socket?.remoteAddress ||
       '0.0.0.0'
     );
   }

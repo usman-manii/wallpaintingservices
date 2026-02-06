@@ -3,6 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { log, logError } from '../src/common/utils/cli-logger';
 
 // Force load .env from current directory
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -13,7 +14,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  console.log('Seeding blog posts...');
+  log('Seeding blog posts...');
 
   // Get the author (Admin)
   const author = await prisma.user.findFirst({
@@ -21,7 +22,7 @@ async function main() {
   });
 
   if (!author) {
-    console.error('Admin user not found, seed/create users first.');
+    logError('Admin user not found, seed/create users first.');
     return;
   }
 
@@ -163,16 +164,63 @@ async function main() {
                 tags: { connect: tags.map(t => ({ id: t.id })) }
             }
         });
-        console.log(`Created post: ${p.title}`);
+        log(`Created post: ${p.title}`);
     } else {
-        console.log(`Skipping existing post: ${p.title}`);
+        log(`Skipping existing post: ${p.title}`);
     }
+  }
+
+  const seededPosts = await prisma.post.findMany({
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, title: true },
+  });
+
+  const sampleComments = [
+    {
+      content: 'Outstanding tips. The color pairing guidance is on point.',
+      authorName: 'Demo Visitor',
+      authorEmail: 'demo.visitor@example.com',
+      isApproved: true,
+      upvotes: 3,
+    },
+    {
+      content: 'Could you share more about prep work for textured walls?',
+      authorName: 'Pending Reviewer',
+      authorEmail: 'pending.reviewer@example.com',
+      isApproved: false,
+    },
+    {
+      content: 'This is off topic and should be reviewed by moderation.',
+      authorName: 'Flagged User',
+      authorEmail: 'flagged.user@example.com',
+      isApproved: true,
+      isFlagged: true,
+      flagReason: 'Off-topic',
+      downvotes: 2,
+    },
+  ];
+
+  const postsToSeed = seededPosts.slice(0, 5);
+  for (const post of postsToSeed) {
+    const existingComments = await prisma.comment.count({ where: { postId: post.id } });
+    if (existingComments > 0) {
+      log(`Skipping comments for post: ${post.title} (already has comments)`);
+      continue;
+    }
+
+    await prisma.comment.createMany({
+      data: sampleComments.map((comment) => ({
+        ...comment,
+        postId: post.id,
+      })),
+    });
+    log(`Seeded comments for post: ${post.title}`);
   }
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    logError(e);
     process.exit(1);
   })
   .finally(async () => {

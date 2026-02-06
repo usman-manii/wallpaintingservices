@@ -8,17 +8,18 @@ import TrendingPostsWidget from '@/components/widgets/TrendingPostsWidget';
 import UpcomingPostsWidget from '@/components/widgets/UpcomingPostsWidget';
 import PageByIdRenderer from '@/components/PageByIdRenderer';
 import { API_URL } from '@/lib/api';
+import logger from '@/lib/logger';
 
 // Types
 interface Post {
   id: string;
-  title: string;
+  title?: string;
   slug: string;
-  excerpt: string;
-  featuredImage: string | null;
-  publishedAt: string;
-  author: { firstName: string; lastName: string; nickname: string };
-  categories: { name: string; slug: string }[];
+  excerpt?: string;
+  featuredImage?: string | null;
+  publishedAt?: string;
+  author?: { firstName?: string; lastName?: string; nickname?: string };
+  categories?: { name?: string; slug?: string }[];
 }
 
 interface SiteSettings {
@@ -42,11 +43,13 @@ async function fetchPageIdBySlug(slug: string): Promise<string | null> {
       next: { revalidate: 300 } // Cache for 5 minutes
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as PageData;
-    if (data?.status && data.status !== 'PUBLISHED') return null;
-    return data?.id ?? null;
-  } catch (error) {
-    console.error(`Failed to load page by slug "${slug}":`, error);
+    const data = await res.json();
+    const page = parsePage(data);
+    if (!page) return null;
+    if (page.status && page.status !== 'PUBLISHED') return null;
+    return page.id;
+  } catch (error: unknown) {
+    logger.error('Failed to load page by slug', error, { component: 'HomePage', slug });
     return null;
   }
 }
@@ -74,9 +77,9 @@ async function getData() {
     if (settingsRes.ok) {
         try {
             const data = await settingsRes.json();
-            if (data) settings = data;
-        } catch (e) {
-            console.error('Failed to parse settings JSON', e);
+            settings = parseSettings(data);
+        } catch (e: unknown) {
+            logger.error('Failed to parse settings JSON', e, { component: 'HomePage' });
         }
     }
 
@@ -86,9 +89,14 @@ async function getData() {
     if (postsRes.ok) {
         try {
             const postsData = await postsRes.json();
-            posts = Array.isArray(postsData) ? postsData : (postsData?.posts || []);
-        } catch (e) {
-            console.error('Failed to parse posts JSON', e);
+            const list = Array.isArray(postsData)
+              ? postsData
+              : (postsData && typeof postsData === 'object' && Array.isArray((postsData as { posts?: unknown }).posts)
+                ? (postsData as { posts: unknown[] }).posts
+                : []);
+            posts = list.map(toPost).filter((post): post is Post => post !== null);
+        } catch (e: unknown) {
+            logger.error('Failed to parse posts JSON', e, { component: 'HomePage' });
         }
     }
 
@@ -97,14 +105,67 @@ async function getData() {
       posts,
       homePageIdFromSlug,
     };
-  } catch (error) {
-    console.error('Error fetching data:', error);
+  } catch (error: unknown) {
+    logger.error('Error fetching data', error, { component: 'HomePage' });
     return {
       settings: { homePageLayout: 'single', siteName: 'Blog', description: '', homePageId: null, blogPageId: null },
       posts: [],
       homePageIdFromSlug: null,
     };
   }
+}
+
+function parsePage(value: unknown): PageData | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== 'string' || typeof obj.slug !== 'string') return null;
+  return {
+    id: obj.id,
+    slug: obj.slug,
+    status: typeof obj.status === 'string' ? obj.status : undefined,
+  };
+}
+
+function parseSettings(value: unknown): SiteSettings {
+  if (!value || typeof value !== 'object') {
+    return { homePageLayout: 'single', siteName: 'Blog', description: '', homePageId: null, blogPageId: null };
+  }
+  const obj = value as Record<string, unknown>;
+  const homePageLayout = obj.homePageLayout === 'dual' ? 'dual' : 'single';
+  return {
+    homePageLayout,
+    siteName: typeof obj.siteName === 'string' ? obj.siteName : 'Blog',
+    description: typeof obj.description === 'string' ? obj.description : '',
+    homePageId: typeof obj.homePageId === 'string' ? obj.homePageId : null,
+    blogPageId: typeof obj.blogPageId === 'string' ? obj.blogPageId : null,
+  };
+}
+
+function toPost(value: unknown): Post | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== 'string' || typeof obj.slug !== 'string') return null;
+  const authorObj = obj.author && typeof obj.author === 'object' ? (obj.author as Record<string, unknown>) : null;
+  const categories = Array.isArray(obj.categories) ? obj.categories : [];
+  return {
+    id: obj.id,
+    slug: obj.slug,
+    title: typeof obj.title === 'string' ? obj.title : undefined,
+    excerpt: typeof obj.excerpt === 'string' ? obj.excerpt : undefined,
+    featuredImage: typeof obj.featuredImage === 'string' ? obj.featuredImage : null,
+    publishedAt: typeof obj.publishedAt === 'string' ? obj.publishedAt : undefined,
+    author: authorObj ? {
+      firstName: typeof authorObj.firstName === 'string' ? authorObj.firstName : undefined,
+      lastName: typeof authorObj.lastName === 'string' ? authorObj.lastName : undefined,
+      nickname: typeof authorObj.nickname === 'string' ? authorObj.nickname : undefined,
+    } : undefined,
+    categories: categories.flatMap((category) => {
+      if (!category || typeof category !== 'object') return [];
+      const cat = category as Record<string, unknown>;
+      if (typeof cat.slug !== 'string') return [];
+      return [{ slug: cat.slug, name: typeof cat.name === 'string' ? cat.name : undefined }];
+    }),
+  };
 }
 
 export default async function Home() {
@@ -136,10 +197,9 @@ export default async function Home() {
               <article key={post.id} className="flex flex-col bg-card rounded-xl shadow-elevation-1 border border-border overflow-hidden hover:shadow-elevation-2 transition-shadow">
                 {post.featuredImage && (
                   <div className="h-64 sm:h-80 w-full relative overflow-hidden bg-muted">
-                     {/* eslint-disable-next-line @next/next/no-img-element */}
                      <img 
                         src={post.featuredImage} 
-                        alt={post.title}
+                        alt={post.title || 'Post'}
                         className="w-full h-full object-cover transition-transform hover:scale-105 duration-500"
                      />
                   </div>
@@ -148,7 +208,7 @@ export default async function Home() {
                   <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-4">
                      <span className="flex items-center gap-1">
                         <Calendar className="w-4 h-4" />
-                        {new Date(post.publishedAt).toLocaleDateString()}
+                        {post.publishedAt ? new Date(post.publishedAt).toLocaleDateString() : ''}
                      </span>
                      {post.author && (
                         <span className="flex items-center gap-1">
@@ -166,12 +226,12 @@ export default async function Home() {
 
                   <Link href={`/blog/${post.slug}`} className="block group">
                     <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-3 group-hover:text-primary transition-colors">
-                      {post.title}
+                      {post.title || 'Untitled'}
                     </h2>
                   </Link>
 
                   <p className="text-muted-foreground leading-relaxed mb-6 line-clamp-3">
-                    {post.excerpt}
+                    {post.excerpt || ''}
                   </p>
 
                   <Link href={`/blog/${post.slug}`}>
@@ -234,3 +294,5 @@ function SearchBar() {
         </Card>
     )
 }
+
+

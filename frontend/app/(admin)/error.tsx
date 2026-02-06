@@ -30,7 +30,7 @@ export default function AdminError({
           <Button variant="outline" onClick={() => { router.replace('/dashboard'); }}>
             Go to dashboard
           </Button>
-          <Button variant="ghost" onClick={() => { router.replace('/auth'); }}>
+          <Button variant="ghost" onClick={() => { router.replace('/login'); }}>
             Sign in again
           </Button>
         </div>

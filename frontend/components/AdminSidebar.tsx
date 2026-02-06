@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
@@ -18,6 +20,7 @@ import {
   ChevronDown,
   Clock,
   MessageSquare,
+  Bell,
   Tags,
   Calendar,
   Search,
@@ -25,17 +28,32 @@ import {
   Link as LinkIcon,
   Folder,
   Plus,
-  BarChart3,
   Images,
   Palette,
   Menu as MenuIcon,
   Layout,
   Phone
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useState, createContext, useContext, useEffect } from 'react';
 import { useAdminSession } from '@/contexts/AdminSessionContext';
 
-const navigation = [
+type NavChild = {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+};
+
+type NavItem = {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+  roles?: string[];
+  badge?: string;
+  dropdown?: NavChild[];
+};
+
+const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { 
     name: 'Posts', 
@@ -43,6 +61,7 @@ const navigation = [
     icon: FileText,
     dropdown: [
       { name: 'All Posts', href: '/dashboard/posts', icon: FileText },
+      { name: 'Drafts', href: '/dashboard/drafts', icon: FileText },
       { name: 'Add New Post', href: '/dashboard/posts/new', icon: Plus },
       { name: 'Tags', href: '/dashboard/tags', icon: Tags },
       { name: 'Categories', href: '/dashboard/categories', icon: Folder },
@@ -60,11 +79,11 @@ const navigation = [
     ]
   },
   { name: 'Comments', href: '/dashboard/comments', icon: MessageSquare },
+  { name: 'Comms Hub', href: '/dashboard/notifications', icon: Bell, roles: ['ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR'] },
   { name: 'Distribution', href: '/dashboard/distribution', icon: Share2 },
-  { name: 'Feedback', href: '/dashboard/feedback', icon: BarChart3, roles: ['ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR'] },
   { name: 'Cron Jobs', href: '/dashboard/cron-jobs', icon: Clock, roles: ['ADMINISTRATOR', 'SUPER_ADMIN'] },
   { name: 'AI Content', href: '/dashboard/ai', icon: Sparkles, roles: ['ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR'] },
-  { name: 'SEO Management', href: '/dashboard/seo', icon: Search, roles: ['ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR'], badge: 'NEW' },
+  { name: 'SEO Management', href: '/dashboard/seo', icon: Search, roles: ['ADMINISTRATOR', 'SUPER_ADMIN', 'EDITOR'] },
   { 
     name: 'Appearance', 
     href: '/dashboard/appearance/menu',
@@ -125,10 +144,10 @@ export default function AdminSidebar() {
       // The logout function in AdminSessionContext will handle the redirect
       await logout();
     } catch (error) {
-      console.error('Logout failed:', error);
+      logger.error('Logout failed:', error);
       // Fallback redirect if logout fails
       if (typeof window !== 'undefined') {
-        router.replace('/auth?mode=login');
+        router.replace('/login');
       }
     }
   };
@@ -344,3 +363,4 @@ export default function AdminSidebar() {
     </SidebarContext.Provider>
   );
 }
+

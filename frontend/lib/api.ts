@@ -1,4 +1,6 @@
 
+import logger from '@/lib/logger';
+
 // P4 Security Fix: Validate NEXT_PUBLIC_API_URL is configured
 function validateApiUrl(): string {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -13,10 +15,10 @@ function validateApiUrl(): string {
   
   // In development, default to localhost with a warning
   if (!apiUrl) {
-    // Only log in development (server-side check)
-    if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
-      // Using console here is acceptable for critical configuration warnings
-      console.warn('[Config] NEXT_PUBLIC_API_URL not set, using default http://localhost:3001');
+    if (process.env.NODE_ENV !== 'production') {
+      logger.warn('NEXT_PUBLIC_API_URL not set, using default http://localhost:3001', {
+        component: 'api',
+      });
     }
     return 'http://localhost:3001';
   }
@@ -24,7 +26,7 @@ function validateApiUrl(): string {
   // Validate URL format
   try {
     new URL(apiUrl);
-  } catch (error) {
+  } catch {
     throw new Error(
       `CRITICAL: NEXT_PUBLIC_API_URL "${apiUrl}" is not a valid URL. ` +
       'Please provide a valid URL (e.g., https://api.example.com)'
@@ -38,23 +40,48 @@ function validateApiUrl(): string {
 export const API_URL = validateApiUrl();
 
 // PERFORMANCE FIX: Request deduplication - prevent duplicate in-flight requests
-const pendingRequests = new Map<string, Promise<any>>();
+const pendingRequests = new Map<string, Promise<unknown>>();
 
 function createRequestKey(endpoint: string, options: RequestInit): string {
   const method = options.method || 'GET';
-  const body = options.body ? JSON.stringify(options.body) : '';
-  return `${method}:${endpoint}:${body}`;
+  const body = options.body;
+  let bodyKey = '';
+  if (typeof body === 'string') {
+    bodyKey = body;
+  } else if (body instanceof FormData) {
+    bodyKey = 'formdata';
+  } else if (body instanceof URLSearchParams) {
+    bodyKey = body.toString();
+  } else if (body instanceof Blob) {
+    bodyKey = `blob:${body.type}:${body.size}`;
+  } else if (body instanceof ArrayBuffer) {
+    bodyKey = `arraybuffer:${body.byteLength}`;
+  } else if (ArrayBuffer.isView(body)) {
+    bodyKey = `arraybuffer:${body.byteLength}`;
+  } else if (body) {
+    try {
+      bodyKey = JSON.stringify(body);
+    } catch {
+      bodyKey = 'body';
+    }
+  }
+  return `${method}:${endpoint}:${bodyKey}`;
 }
 
 type RequestWithRetry = RequestInit & { __retried?: boolean; redirectOn401?: boolean; timeout?: number };
+type NextFetchOptions = { next?: { revalidate?: number } };
+type RequestOptions = RequestWithRetry & NextFetchOptions;
 
-export async function fetchAPI(endpoint: string, options: RequestWithRetry = {}) {
+export async function fetchAPI<T = unknown>(
+  endpoint: string,
+  options: RequestOptions = {},
+): Promise<T | null> {
   // PERFORMANCE FIX: Deduplicate GET requests - return existing promise if in flight
   const method = options.method || 'GET';
   if (method === 'GET' && !options.__retried) {
     const requestKey = createRequestKey(endpoint, options);
     if (pendingRequests.has(requestKey)) {
-      return pendingRequests.get(requestKey);
+      return pendingRequests.get(requestKey) as Promise<T | null>;
     }
   }
   
@@ -64,7 +91,7 @@ export async function fetchAPI(endpoint: string, options: RequestWithRetry = {})
   // Wrap fetch logic to manage deduplication
   const requestKey = method === 'GET' ? createRequestKey(endpoint, options) : null;
   
-  const fetchPromise = (async () => {
+  const fetchPromise: Promise<T | null> = (async () => {
     // Create abort controller for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -73,33 +100,42 @@ export async function fetchAPI(endpoint: string, options: RequestWithRetry = {})
     const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   
     // Respect FormData bodies (do not set Content-Type so browser can set boundary)
-    const isFormDataBody = options && (options as any).body instanceof FormData;
-    const headers: Record<string,string> = {
-      ...(isFormDataBody ? {} : { 'Content-Type': 'application/json' }),
-      ...((options.headers as Record<string,string>) || {}),
-      ...(typeof window !== 'undefined'
-        ? { 'x-csrf-token': document.cookie.split('; ').find(c => c.startsWith('csrf-token='))?.split('=')[1] || '' }
-        : {}),
-    };
+    const isFormDataBody = options.body instanceof FormData;
+    const headers = new Headers(options.headers || {});
+    if (!isFormDataBody && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    if (typeof window !== 'undefined') {
+      const csrfToken = document.cookie
+        .split('; ')
+        .find((cookie) => cookie.startsWith('csrf-token='))
+        ?.split('=')[1];
+      if (csrfToken) {
+        headers.set('x-csrf-token', csrfToken);
+      }
+    }
 
     let res: Response;
     try {
-      res = await fetch(`${API_URL}${normalizedEndpoint}`, {
+      const fetchOptions: RequestInit & NextFetchOptions = {
         ...options,
         headers,
         signal: controller.signal,
         cache: options.cache ?? 'no-store',
         // Ensure Next.js server-side fetches don't cache either
-        next: { revalidate: 0, ...(options as any).next },
+        next: { revalidate: 0, ...(options.next || {}) },
         credentials: 'include', // SECURITY FIX: Send httpOnly cookies
-      });
+      };
+      res = await fetch(`${API_URL}${normalizedEndpoint}`, fetchOptions);
       clearTimeout(timeoutId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearTimeout(timeoutId);
-      if (err.name === 'AbortError') {
+      const errorName = typeof err === 'object' && err && 'name' in err ? (err as { name?: string }).name : undefined;
+      if (errorName === 'AbortError') {
         throw new Error(`Request timeout after ${timeout / 1000} seconds`);
       }
-      throw new Error(`Network error: ${err?.message || 'Failed to fetch'}`);
+      const message = err instanceof Error ? err.message : 'Failed to fetch';
+      throw new Error(`Network error: ${message}`);
     }
 
     // Special handling for unauthorized responses in browser environments
@@ -117,7 +153,7 @@ export async function fetchAPI(endpoint: string, options: RequestWithRetry = {})
           });
           if (refreshRes.ok) {
             // Mark as retried to prevent infinite loops
-            return fetchAPI(endpoint, { ...options, __retried: true });
+            return fetchAPI<T>(endpoint, { ...options, __retried: true });
           }
         } catch (_) {
           // ignore refresh errors and fall through to redirect/error
@@ -128,31 +164,42 @@ export async function fetchAPI(endpoint: string, options: RequestWithRetry = {})
       if (shouldRedirect && (options.__retried || isAuthEndpoint)) {
         try {
           await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
-        } catch (_) {}
+        } catch (_) {
+          // ignore logout errors; redirect will still occur
+        }
         
         // Use setTimeout to avoid race conditions with state updates
         setTimeout(() => {
-          window.location.replace('/auth');
+          window.location.replace('/login');
         }, 100);
-        return; // Prevent throwing error after redirect
+        return null; // Prevent throwing error after redirect
       }
       
       const err = await res.json().catch(() => ({ message: 'Unauthorized' }));
-      throw new Error(err.message || 'Unauthorized');
+      if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+        throw new Error(err.message);
+      }
+      throw new Error('Unauthorized');
     }
 
     if (!res.ok) {
-      const error = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(error.message || `API Error: ${res.statusText}`);
+      const errorPayload = await res.json().catch(() => ({ message: res.statusText }));
+      if (errorPayload && typeof errorPayload === 'object' && 'message' in errorPayload && typeof errorPayload.message === 'string') {
+        throw new Error(errorPayload.message);
+      }
+      throw new Error(`API Error: ${res.statusText}`);
     }
 
     try {
       // Some endpoints legitimately return no content (e.g. 204 or empty body).
       // In those cases, avoid throwing a JSON parse error and just return null.
       const data = await res.json();
-      return data;
-    } catch (err: any) {
-      if (err instanceof SyntaxError || err?.name === 'Syntax Error') {
+      return data as T;
+    } catch (err: unknown) {
+      if (err instanceof SyntaxError) {
+        return null;
+      }
+      if (err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'Syntax Error') {
         return null;
       }
       throw err;

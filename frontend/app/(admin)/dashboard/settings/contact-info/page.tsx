@@ -1,5 +1,7 @@
 'use client';
 
+import logger from '@/lib/logger';
+
 import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { useRouter } from 'next/navigation';
@@ -8,6 +10,10 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
 import { Save, ArrowLeft, Phone, Mail, MapPin, Facebook, Twitter, Instagram, Linkedin, Youtube } from 'lucide-react';
+
+type SettingsResponse = {
+  contactInfo?: Record<string, unknown> | string | null;
+};
 
 export default function ContactInfoPage() {
   const router = useRouter();
@@ -27,7 +33,7 @@ export default function ContactInfoPage() {
 
   const loadContactInfo = useCallback(async () => {
     try {
-      const data = await fetchAPI('/settings', { redirectOn401: false, cache: 'no-store' });
+      const data = await fetchAPI<SettingsResponse>('/settings', { redirectOn401: false, cache: 'no-store' });
       const contactData = data?.contactInfo; // Can be null, string, or object
       
       if (contactData) {
@@ -44,9 +50,9 @@ export default function ContactInfoPage() {
           youtube: parsedContactInfo?.youtube || ''
         });
       }
-    } catch (e: any) {
-      console.error('Error loading contact info:', e);
-      showError(e.message || 'Failed to load contact information');
+    } catch (e: unknown) {
+      logger.error('Error loading contact info:', e);
+      showError(e instanceof Error && e.message ? e.message : 'Failed to load contact information');
     } finally {
       setLoading(false);
     }
@@ -65,8 +71,8 @@ export default function ContactInfoPage() {
         redirectOn401: false // Send as nested object
       });
       success('Contact information saved successfully!');
-    } catch (e: any) {
-      showError(e.message || 'Failed to save contact information');
+    } catch (e: unknown) {
+      showError(e instanceof Error && e.message ? e.message : 'Failed to save contact information');
     } finally {
       setSaving(false);
     }
@@ -201,3 +207,5 @@ export default function ContactInfoPage() {
     </div>
   );
 }
+
+

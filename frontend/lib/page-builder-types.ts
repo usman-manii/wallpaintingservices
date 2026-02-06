@@ -1,8 +1,10 @@
+import type { JsonValue } from '@/types/json';
+
 export interface PageSection {
   id: string;
   type: string;
-  config: Record<string, any>;
-  content: Record<string, any>;
+  config: Record<string, JsonValue>;
+  content: Record<string, JsonValue>;
   styles: SectionStyles;
   children?: PageSection[];
 }
@@ -43,8 +45,8 @@ export interface ComponentDefinition {
   type: string;
   category: string;
   icon: string;
-  defaultConfig: Record<string, any>;
-  defaultContent: Record<string, any>;
+  defaultConfig: Record<string, JsonValue>;
+  defaultContent: Record<string, JsonValue>;
   defaultStyles: SectionStyles;
   thumbnail?: string;
 }
